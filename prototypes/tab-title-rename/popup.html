@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rename this tab</title>
+    <style>
+      body {
+        width: 280px;
+        margin: 16px;
+        font:
+          14px system-ui,
+          sans-serif;
+      }
+      label,
+      input,
+      button {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      input,
+      button {
+        margin-top: 8px;
+        padding: 8px;
+      }
+      #restore {
+        margin-top: 6px;
+      }
+      #status {
+        min-height: 1.2em;
+      }
+    </style>
+  </head>
+  <body>
+    <label for="custom-name">Custom tab name</label>
+    <input id="custom-name" autocomplete="off" />
+    <button id="apply">Allow this site and apply</button>
+    <button id="restore">Restore page title</button>
+    <p id="status" role="status"></p>
+    <script src="popup.js"></script>
+  </body>
+</html>
