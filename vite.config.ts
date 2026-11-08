@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import artifacts from './extension-artifacts.json';
+import manifest from './src/manifest.json';
 
 export default defineConfig({
   plugins: [react()],
@@ -14,11 +16,12 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        popup: path.resolve(__dirname, 'src/popup/index.html'),
-        background: path.resolve(__dirname, 'src/background/index.ts'),
+        popup: path.resolve(__dirname, artifacts.popupHtml),
+        background: path.resolve(__dirname, artifacts.background.entry),
       },
       output: {
-        entryFileNames: (chunk) => (chunk.name === 'background' ? 'background.js' : 'assets/[name]-[hash].js'),
+        entryFileNames: (chunk) =>
+          chunk.name === 'background' ? manifest.background.service_worker : 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
       },

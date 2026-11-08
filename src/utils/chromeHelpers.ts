@@ -1,4 +1,5 @@
 import { ChromeResponse } from '@/types';
+import type { BackgroundAction, BackgroundResult, SendArguments } from './chromeMessages';
 
 export const asPositiveInteger = (value: unknown): number | undefined => {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
@@ -8,14 +9,19 @@ export const asPositiveInteger = (value: unknown): number | undefined => {
   return value;
 };
 
-export const sendBackground = async <T>(action: string, payload: Record<string, unknown> = {}): Promise<T> => {
-  const response = (await chrome.runtime.sendMessage({ action, ...payload })) as ChromeResponse<T> | undefined;
+export const sendBackground = async <Action extends BackgroundAction>(
+  action: Action,
+  ...args: SendArguments<Action>
+): Promise<BackgroundResult<Action>> => {
+  const [payload] = args;
+  const response = (await chrome.runtime.sendMessage({ action, ...(payload ?? {}) })) as
+    ChromeResponse<BackgroundResult<Action>> | undefined;
 
   if (!response?.success) {
     throw new Error(response?.error ?? 'The browser action could not be completed.');
   }
 
-  return response.data as T;
+  return response.data as BackgroundResult<Action>;
 };
 
 export const formatShortcutLabel = (shortcut: string): string => {
@@ -101,7 +107,7 @@ export const normalizeNavigationUrl = (input: string): string | null => {
       return url.href;
     }
   } catch {
-    // Continue to host parsing for addresses entered without a scheme.
+    // Missing schemes are valid input; the hostname branch below supplies HTTPS.
   }
 
   const isBareAddress = /^(?:([\w-]+\.)+[a-z]{2,}|localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?(?:[/?#].*)?$/i.test(

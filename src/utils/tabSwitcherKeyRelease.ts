@@ -14,7 +14,7 @@ export const isTabSwitcherModifierKey = (key: string): key is 'Meta' | 'Control'
   return key === 'Meta' || key === 'Control' || key === 'Alt';
 };
 
-export const installTabSwitcherKeyReleaseMonitor = (): void => {
+export const installTabSwitcherKeyReleaseMonitorInPage = (): void => {
   if (window.__keybarKeyReleaseState) {
     return;
   }
@@ -25,12 +25,16 @@ export const installTabSwitcherKeyReleaseMonitor = (): void => {
   window.addEventListener(
     'keyup',
     (event: KeyboardEvent) => {
-      if (event.isTrusted && isTabSwitcherModifierKey(event.key)) {
+      if (event.isTrusted && (event.key === 'Meta' || event.key === 'Control' || event.key === 'Alt')) {
         state.lastModifierReleaseAt = Date.now();
       }
     },
     true,
   );
+};
+
+export const installTabSwitcherKeyReleaseMonitor = (): void => {
+  installTabSwitcherKeyReleaseMonitorInPage();
 };
 
 export const wasTabSwitcherModifierReleasedAfter = (startedAt: number | null | undefined): boolean => {

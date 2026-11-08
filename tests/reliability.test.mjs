@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { event, makeChrome } from './helpers/chrome.mjs';
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const artifacts = JSON.parse(await readFile(path.join(projectRoot, 'extension-artifacts.json'), 'utf8'));
 
 test('reliability contracts', { timeout: 15000 }, async (t) => {
   const original = { chrome: globalThis.chrome, window: globalThis.window, document: globalThis.document };
@@ -15,7 +21,7 @@ test('reliability contracts', { timeout: 15000 }, async (t) => {
     ({ chrome, tabs } = makeChrome());
     globalThis.chrome = chrome;
     server.moduleGraph.invalidateAll();
-    await server.ssrLoadModule('/src/background/index.ts');
+    await server.ssrLoadModule(`/${artifacts.background.entry}`);
     ({ sendBackground } = await server.ssrLoadModule('/src/utils/chromeHelpers.ts'));
   });
 
@@ -93,7 +99,7 @@ test('reliability contracts', { timeout: 15000 }, async (t) => {
     );
   });
   await t.test('bulk close matches the palette target set when an own-extension page is open', async () => {
-    tabs.push({ id: 4, windowId: 10, index: 2, url: chrome.runtime.getURL('src/popup/index.html') });
+    tabs.push({ id: 4, windowId: 10, index: 2, url: chrome.runtime.getURL(artifacts.popupHtml) });
     await sendBackground('tabs:close-confirmed', {
       closeAction: 'tabs:close-right',
       anchorTabId: 1,
@@ -134,6 +140,7 @@ test('reliability contracts', { timeout: 15000 }, async (t) => {
     });
   }
   await t.test('bulk close validates confirmation and restricts other/group closes to the anchor window', async () => {
+    const tabsBeforeInvalidClose = structuredClone(tabs);
     await assert.rejects(
       sendBackground('tabs:close-confirmed', {
         closeAction: 'tabs:close-right',
@@ -141,8 +148,8 @@ test('reliability contracts', { timeout: 15000 }, async (t) => {
         windowId: 10,
         tabIds: [3, 3],
       }),
-      /Invalid tab close/,
     );
+    assert.deepEqual(tabs, tabsBeforeInvalidClose, 'duplicate tab IDs reject without closing tabs');
     tabs.forEach((tab) => {
       tab.groupId = 4;
     });

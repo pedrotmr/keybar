@@ -1,5 +1,4 @@
-// Extract only complete objects in the root groups array. The complete response
-// is still parsed and validated separately before any proposal can be applied.
+// A preview is provisional; the complete response is validated before a proposal can be applied.
 export function createGroupStream() {
   let text = '';
   let position = 0;
@@ -55,7 +54,7 @@ export function createGroupStream() {
             try {
               completed.push(JSON.parse(text.slice(groupStart, position + 1)));
             } catch {
-              /* Ignore an invalid preview object. */
+              // A malformed preview group must not prevent later groups from being previewed.
             }
             groupStart = undefined;
           }

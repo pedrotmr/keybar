@@ -12,6 +12,15 @@ import { PROPOSAL_INSTRUCTIONS, validateProposal } from './proposal.mjs';
 import { buildStreamRequest } from './stream-request.mjs';
 import { createGroupStream } from './group-stream.mjs';
 import { createClaudeStream } from './claude-stream.mjs';
+import {
+  CLAUDE_MODELS,
+  CLAUDE_REASONING_EFFORTS,
+  isProvider,
+  OPENAI_REASONING_EFFORTS,
+  PROVIDERS,
+} from '../extension/shared/provider-config.mjs';
+import { CLAUDE_PROCESS_TIMEOUT_MS } from '../extension/shared/timeouts.mjs';
+import { NativeHostAction, NativeHostEvent } from '../extension/shared/protocol.mjs';
 
 const execFileAsync = promisify(execFile);
 const MAX_FRAME_BYTES = 2 * 1024 * 1024;
@@ -20,27 +29,9 @@ const KEYCHAIN_SERVICE = 'com.keybar.tab-organizer';
 const KEYCHAIN_ACCOUNT = 'credential-encryption-key';
 const APP_SUPPORT_DIRECTORY = join(homedir(), 'Library', 'Application Support', 'Keybar Tab Organizer Prototype');
 const PROVIDER_RUNTIME_PATH = join(APP_SUPPORT_DIRECTORY, 'codex-runtime.json');
-const PROVIDERS = new Set(['codex', 'anthropic']);
-const OPENAI_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
-const CLAUDE_EFFORTS = new Set(['default', 'low', 'medium', 'high', 'xhigh', 'max']);
 let encryptionKey;
-const CLAUDE_MODELS = [
-  { id: 'haiku', displayName: 'Claude Haiku' },
-  { id: 'sonnet', displayName: 'Claude Sonnet' },
-  { id: 'opus', displayName: 'Claude Opus' },
-  { id: 'fable', displayName: 'Claude Fable' },
-].map((model) => ({
-  ...model,
-  reasoningEfforts: [
-    { value: 'default', label: 'Provider default' },
-    { value: 'low', label: 'Low' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'high', label: 'High' },
-    { value: 'xhigh', label: 'Extra high' },
-    { value: 'max', label: 'Max' },
-  ],
-  defaultReasoningEffort: 'low',
-}));
+const OPENAI_EFFORTS = new Set(OPENAI_REASONING_EFFORTS);
+const CLAUDE_EFFORTS = new Set(CLAUDE_REASONING_EFFORTS);
 
 const credentialEncryption = {
   id: 'keybar-tab-organizer-macos-keychain-aes-256-gcm-v1',
@@ -117,7 +108,7 @@ async function handleFrame(frame) {
   let request;
   try {
     request = JSON.parse(frame.toString('utf8'));
-    if (request?.action === 'cancel-analysis') {
+    if (request?.action === NativeHostAction.cancelAnalysis) {
       if (request.targetId === activeAnalysisId) activeController?.abort();
       return;
     }
@@ -132,9 +123,9 @@ async function handleFrame(frame) {
 async function dispatch(request) {
   if (!request || typeof request.action !== 'string') throw new Error('Invalid local host request.');
   switch (request.action) {
-    case 'session':
+    case NativeHostAction.session:
       return providerSession(request.provider);
-    case 'sign-in': {
+    case NativeHostAction.signIn: {
       requireProvider(request.provider, 'codex');
       if (process.platform !== 'darwin')
         throw new Error("This prototype's encrypted sign-in storage currently supports macOS only.");
@@ -146,14 +137,14 @@ async function dispatch(request) {
         signInPending = false;
       }
     }
-    case 'claude-login':
+    case NativeHostAction.claudeLogin:
       requireProvider(request.provider, 'anthropic');
       return startClaudeLogin();
-    case 'disconnect':
+    case NativeHostAction.disconnect:
       return disconnectProvider(request.provider);
-    case 'catalog':
+    case NativeHostAction.catalog:
       return loadModelCatalog(request.provider);
-    case 'analyze':
+    case NativeHostAction.analyze:
       return analyze(request);
     default:
       throw new Error('Unknown local host action.');
@@ -324,7 +315,12 @@ function claudeConnectionError(status) {
 
 function requireProvider(provider, expected) {
   if (expected && provider !== expected) throw new Error('Invalid provider for this connection action.');
-  if (!PROVIDERS.has(provider)) throw new Error('Choose Codex or Claude Code before continuing.');
+  if (!isProvider(provider)) {
+    const labels = Object.values(PROVIDERS)
+      .map(({ label }) => label)
+      .join(' or ');
+    throw new Error(`Choose ${labels} before continuing.`);
+  }
 }
 
 async function analyze(request) {
@@ -389,7 +385,7 @@ async function analyze(request) {
       if (preview.groups.length <= shownGroups) return;
       shownGroups = preview.groups.length;
       firstGroupMs ??= performance.now() - started;
-      send({ id: request.id, event: 'progress', data: { groups: preview.groups } });
+      send({ id: request.id, event: NativeHostEvent.progress, data: { groups: preview.groups } });
     };
     let responseText;
     if (provider === 'codex') {
@@ -525,7 +521,7 @@ function requestClaudeCodeAnalysis({ claudePath, modelId, reasoningEffort, input
       timedOut = true;
       terminate();
       finish(new Error('Claude Code took too long to respond. Retry when the CLI or network is available.'));
-    }, 110_000);
+    }, CLAUDE_PROCESS_TIMEOUT_MS);
 
     if (signal.aborted) {
       abort();

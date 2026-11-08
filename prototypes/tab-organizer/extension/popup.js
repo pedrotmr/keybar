@@ -1,3 +1,6 @@
+import { chooseDefaultModel } from './shared/provider-config.mjs';
+import { PopupMessage } from './shared/protocol.mjs';
+
 const $ = (selector) => document.querySelector(selector);
 const connectButton = $('#connect');
 const disconnectButton = $('#disconnect');
@@ -27,7 +30,7 @@ let settingsSaveQueue = Promise.resolve();
 
 chrome.runtime.onMessage.addListener((message) => {
   if (
-    message?.type !== 'analysis-progress' ||
+    message?.type !== PopupMessage.analysisProgress ||
     !currentRun?.running ||
     message.runId !== currentRun.id ||
     analysisCancelled ||
@@ -49,7 +52,7 @@ chrome.runtime.onMessage.addListener((message) => {
 connectButton.addEventListener('click', () =>
   run(connectButton, async () => {
     connectionLabel.textContent = 'Complete the sign-in and permission flow in your browser…';
-    const session = await sendProviderAction({ type: 'connect', provider: 'codex' });
+    const session = await sendProviderAction({ type: PopupMessage.connect, provider: 'codex' });
     if (!session) return;
     renderSession(session);
     await loadCatalog();
@@ -58,7 +61,7 @@ connectButton.addEventListener('click', () =>
 
 disconnectButton.addEventListener('click', () =>
   run(disconnectButton, async () => {
-    const session = await sendProviderAction({ type: 'disconnect', provider: 'codex' });
+    const session = await sendProviderAction({ type: PopupMessage.disconnect, provider: 'codex' });
     if (!session) return;
     renderSession(session);
     clearCatalog();
@@ -67,7 +70,7 @@ disconnectButton.addEventListener('click', () =>
 
 connectClaudeButton.addEventListener('click', () =>
   run(connectClaudeButton, async () => {
-    const result = await sendProviderAction({ type: 'connect-claude', provider: 'anthropic' });
+    const result = await sendProviderAction({ type: PopupMessage.connectClaude, provider: 'anthropic' });
     if (result?.status === 'login_started') {
       connectionLabel.textContent =
         'Claude Code opened in Terminal. Finish sign-in there, then reopen this popup to check the connection.';
@@ -104,7 +107,7 @@ reasoningSelect.addEventListener('change', () =>
 
 sampleButton.addEventListener('click', () =>
   run(sampleButton, async () => {
-    const result = await send({ type: 'load-sample' });
+    const result = await send({ type: PopupMessage.loadSample });
     showMessage(
       result.alreadyLoaded
         ? 'Sample tabs are already open in this window.'
@@ -132,7 +135,7 @@ async function organizeTabs(forceRefresh = false) {
   applyButton.disabled = true;
   $('#reanalyze').disabled = true;
   try {
-    const result = await send({ type: 'analyze', forceRefresh, runId: run.id });
+    const result = await send({ type: PopupMessage.analyze, forceRefresh, runId: run.id });
     if (analysisCancelled) return;
     result.totalLatencyMs = performance.now() - clickedAt;
     result.firstGroupShownMs = run.firstGroupShownMs;
@@ -159,7 +162,7 @@ cancelButton.addEventListener('click', () => {
   groupsRoot.replaceChildren();
   duplicatesRoot.replaceChildren();
   proposal = undefined;
-  void send({ type: 'cancel-analysis' });
+  void send({ type: PopupMessage.cancelAnalysis, runId: currentRun?.id });
   showMessage('Analysis cancelled. No tabs were changed.', false);
 });
 
@@ -179,12 +182,16 @@ applyButton.addEventListener('click', () =>
     const selectedCloseIds = [...duplicatesRoot.querySelectorAll('input[data-close-index]:checked')]
       .map((input) => proposal.closeCandidates[Number(input.dataset.closeIndex)])
       .filter((candidate) => candidate && !candidate.pinned);
-    const result = await send({ type: 'apply', selection: { groups: selectedGroups, closeIds: selectedCloseIds } });
+    const result = await send({
+      type: PopupMessage.apply,
+      selection: { groups: selectedGroups, closeIds: selectedCloseIds },
+    });
     results.classList.add('hidden');
-    const skipped = result.skipped.length ? ` Skipped ${result.skipped.length} changed or unavailable item(s).` : '';
+    const skipped = result.skipped.length ? ` Skipped ${result.skipped.length} changed item(s).` : '';
+    const failed = result.failures.length ? ` Could not complete ${result.failures.length} browser operation(s).` : '';
     showMessage(
-      `Applied ${result.appliedGroups.length} group(s), closed ${result.closedCount} tab(s).${skipped}`,
-      false,
+      `Applied ${result.appliedGroups.length} group(s), closed ${result.closedCount} tab(s).${skipped}${failed}`,
+      result.failures.length > 0,
     );
     if (result.closedCount) $('#reopen').classList.remove('hidden');
   }),
@@ -192,7 +199,7 @@ applyButton.addEventListener('click', () =>
 
 $('#reopen').addEventListener('click', () =>
   run($('#reopen'), async () => {
-    const result = await send({ type: 'reopen' });
+    const result = await send({ type: PopupMessage.reopen });
     $('#reopen').classList.toggle('hidden', !result.hasMore);
     const failed = result.failed.length ? ` Could not reopen ${result.failed.length} tab(s); try again.` : '';
     showMessage(`Reopened ${result.reopened.length} tab URL(s). Unsaved page state is not restored.${failed}`, false);
@@ -244,7 +251,7 @@ async function loadProvider() {
 
   clearCatalog();
   try {
-    const value = await send({ type: 'session', provider });
+    const value = await send({ type: PopupMessage.session, provider });
     if (generation !== providerGeneration || provider !== settings.provider) return;
     renderSession(value);
     if (isConnected(value, provider)) await loadCatalog();
@@ -302,7 +309,7 @@ async function loadCatalog() {
   modelSelect.replaceChildren(new Option('Loading models…', ''));
   let catalog;
   try {
-    catalog = await send({ type: 'catalog', provider });
+    catalog = await send({ type: PopupMessage.catalog, provider });
   } catch (error) {
     if (!isCurrent()) return;
     clearCatalog();
@@ -326,20 +333,6 @@ async function loadCatalog() {
   if (!isCurrent()) return;
   if (!models.length) showMessage('No models are available for this provider connection.', true);
   else clearMessage();
-}
-
-function chooseDefaultModel(availableModels, provider) {
-  if (provider === 'codex') {
-    return (
-      availableModels.find((model) => model.id.toLowerCase() === 'gpt-6-luna') ||
-      availableModels.find((model) => `${model.id} ${model.displayName}`.toLowerCase().includes('luna')) ||
-      availableModels[0]
-    );
-  }
-  return (
-    availableModels.find((model) => `${model.id} ${model.displayName}`.toLowerCase().includes('haiku')) ||
-    availableModels[0]
-  );
 }
 
 function renderModelSettings() {
@@ -379,7 +372,7 @@ function clearCatalog() {
 async function saveSettings() {
   const generation = ++settingsSaveGeneration;
   const snapshot = structuredClone(settings);
-  const saved = settingsSaveQueue.then(() => send({ type: 'save-settings', settings: snapshot }));
+  const saved = settingsSaveQueue.then(() => send({ type: PopupMessage.saveSettings, settings: snapshot }));
   settingsSaveQueue = saved.catch(() => {});
   const value = await saved;
   if (generation === settingsSaveGeneration) settings = value;
@@ -523,7 +516,7 @@ function clearMessage() {
   message.removeAttribute('data-error');
 }
 
-void send({ type: 'get-settings' })
+void send({ type: PopupMessage.getSettings })
   .then(async (initialSettings) => {
     settings = initialSettings;
     providerSelect.value = settings.provider;
@@ -537,6 +530,6 @@ void send({ type: 'get-settings' })
     connectionLabel.dataset.error = 'true';
   });
 
-void send({ type: 'has-reopenable-tabs' }).then((hasTabs) => {
+void send({ type: PopupMessage.hasReopenableTabs }).then((hasTabs) => {
   $('#reopen').classList.toggle('hidden', !hasTabs);
 });

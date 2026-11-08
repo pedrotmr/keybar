@@ -1,86 +1,33 @@
 import type { CommandBarFontFamily } from '@/types';
+import artifacts from '../../extension-artifacts.json';
 
-const productFontFamilies: Record<CommandBarFontFamily, string> = {
-  'open-sans': 'Keybar Open Sans',
-  outfit: 'Keybar Outfit',
-  'nunito-sans': 'Keybar Nunito Sans',
-  sora: 'Keybar Sora',
-  'ibm-plex-mono': 'Keybar IBM Plex Mono',
+type FontFaceMetadata = { path: string; weight: string; subset: 'latin' | 'latinExt' };
+type FontFamilyMetadata = { cssFamily: string; faces: FontFaceMetadata[] };
+const fontFamilies = artifacts.fonts.families as Record<CommandBarFontFamily, FontFamilyMetadata>;
+const unicodeRanges = {
+  latin:
+    'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
+  latinExt:
+    'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF',
 };
-
-const fontFaces = [
-  {
-    family: productFontFamilies['open-sans'],
-    path: 'assets/fonts/open-sans/OpenSans-Latin.woff2',
-    weight: '300 800',
-    unicodeRange:
-      'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
-  },
-  {
-    family: productFontFamilies['open-sans'],
-    path: 'assets/fonts/open-sans/OpenSans-LatinExt.woff2',
-    weight: '300 800',
-    unicodeRange:
-      'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF',
-  },
-  {
-    family: productFontFamilies.outfit,
-    path: 'assets/fonts/outfit/Outfit-Latin.woff2',
-    weight: '100 900',
-    unicodeRange:
-      'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
-  },
-  {
-    family: productFontFamilies.outfit,
-    path: 'assets/fonts/outfit/Outfit-LatinExt.woff2',
-    weight: '100 900',
-    unicodeRange:
-      'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF',
-  },
-  {
-    family: productFontFamilies['nunito-sans'],
-    path: 'assets/fonts/nunito-sans/NunitoSans-Latin.woff2',
-    weight: '200 1000',
-    unicodeRange:
-      'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
-  },
-  {
-    family: productFontFamilies['nunito-sans'],
-    path: 'assets/fonts/nunito-sans/NunitoSans-LatinExt.woff2',
-    weight: '200 1000',
-    unicodeRange:
-      'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF',
-  },
-  {
-    family: productFontFamilies.sora,
-    path: 'assets/fonts/sora/Sora-Latin.woff2',
-    weight: '100 800',
-    unicodeRange:
-      'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
-  },
-  {
-    family: productFontFamilies.sora,
-    path: 'assets/fonts/sora/Sora-LatinExt.woff2',
-    weight: '100 800',
-    unicodeRange:
-      'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF',
-  },
-  ...([400, 500, 600, 700] as const).map((weight) => ({
-    family: productFontFamilies['ibm-plex-mono'],
-    path: `assets/fonts/ibm-plex-mono/IBMPlexMono-${weight}-Latin.woff2`,
-    weight: String(weight),
-    unicodeRange:
-      'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
+const productFontFamilies = Object.fromEntries(
+  Object.entries(fontFamilies).map(([family, metadata]) => [family, metadata.cssFamily]),
+) as Record<CommandBarFontFamily, string>;
+const fontFaces = Object.values(fontFamilies).flatMap(({ cssFamily, faces }) =>
+  faces.map(({ path, weight, subset }) => ({
+    family: cssFamily,
+    path,
+    weight,
+    unicodeRange: unicodeRanges[subset],
   })),
-];
-
-const preloadPaths: Record<CommandBarFontFamily, string> = {
-  'open-sans': 'assets/fonts/open-sans/OpenSans-Latin.woff2',
-  outfit: 'assets/fonts/outfit/Outfit-Latin.woff2',
-  'nunito-sans': 'assets/fonts/nunito-sans/NunitoSans-Latin.woff2',
-  sora: 'assets/fonts/sora/Sora-Latin.woff2',
-  'ibm-plex-mono': 'assets/fonts/ibm-plex-mono/IBMPlexMono-400-Latin.woff2',
-};
+);
+const preloadPaths = Object.fromEntries(
+  Object.entries(fontFamilies).map(([family, metadata]) => {
+    const firstFace = metadata.faces[0];
+    if (!firstFace) throw new Error(`No font face is configured for ${family}.`);
+    return [family, firstFace.path];
+  }),
+) as Record<CommandBarFontFamily, string>;
 
 const fontFaceStyle = 'data-keybar-font-face';
 const fontPreload = 'data-keybar-font-preload';

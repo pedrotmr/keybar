@@ -8,6 +8,7 @@
     "build": "tsc && vite build && vite build --config vite.content-command.config.ts && vite build --config vite.content-tabs.config.ts && node scripts/post-build.js",
     "test": "node scripts/test-search.mjs && node --test tests/reliability.test.mjs tests/tab-shortcut-profile.test.mjs && node scripts/test-palette-lifecycle.mjs",
     "test:tab-organizer": "node --test prototypes/tab-organizer/tests/analysis-workflow.test.mjs prototypes/tab-organizer/tests/codex-model-catalog.test.mjs prototypes/tab-organizer/tests/local-analysis.test.mjs prototypes/tab-organizer/tests/native-host-client.test.mjs prototypes/tab-organizer/tests/popup-streaming.test.mjs prototypes/tab-organizer/tests/proposal.test.mjs prototypes/tab-organizer/tests/streaming.test.mjs",
+    "test:tab-organizer:non-reasoning": "node --test prototypes/tab-organizer/tests/non-reasoning.test.mjs",
     "configure:tab-shortcut": "node scripts/configure-tab-shortcut.mjs",
     "check:extension": "node scripts/check-extension.mjs",
     "fixture:extension": "vite --host 127.0.0.1 --port 8769 --strictPort",
@@ -17,7 +18,7 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test:e2e": "npm run build && playwright test",
-    "test:benchmark": "node scripts/test-search.mjs --benchmark",
+    "test:benchmark": "node scripts/benchmark-search.mjs --check-budget",
     "release:check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run test:e2e",
     "package:extension": "npm run release:check && node scripts/package-extension.mjs"
   },

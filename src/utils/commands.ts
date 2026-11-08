@@ -1,4 +1,5 @@
-import { CommandItem, SplitAwareTab } from '@/types';
+import type { ActionCommandItem, CommandFlow, CommandItem, FlowCommandItem, SplitAwareTab } from '@/types';
+import type { CommandAction } from '@/utils/chromeMessages';
 import { isTabInSplitView } from '@/utils/splitViews';
 import { TAB_GROUP_ID_NONE } from '@/utils/chromeApiConstants';
 
@@ -11,25 +12,50 @@ export interface CommandContext {
   canUnsplitTabs: boolean;
 }
 
-const command = (
+type CommandOptions = Partial<Pick<ActionCommandItem, 'permission' | 'category'>>;
+type ActionCommandOptions = CommandOptions & { flow?: 'confirm-close' };
+type FlowCommandOptions = CommandOptions & { flow: Exclude<CommandFlow, 'confirm-close'> };
+
+function command(
   id: string,
   title: string,
   description: string,
   icon: string,
-  action: string,
+  action: CommandAction,
   keywords: string[],
-  options: Partial<Pick<CommandItem, 'flow' | 'permission' | 'category'>> = {},
-): CommandItem => ({
-  id,
-  title,
-  description,
-  icon,
-  type: 'command',
-  action,
-  keywords,
-  category: options.category ?? 'Browser',
-  ...options,
-});
+  options?: ActionCommandOptions,
+): ActionCommandItem;
+function command(
+  id: string,
+  title: string,
+  description: string,
+  icon: string,
+  action: '',
+  keywords: string[],
+  options: FlowCommandOptions,
+): FlowCommandItem;
+function command(
+  id: string,
+  title: string,
+  description: string,
+  icon: string,
+  action: CommandAction | '',
+  keywords: string[],
+  options: ActionCommandOptions | FlowCommandOptions = {},
+) {
+  const { category, ...metadata } = options;
+  return {
+    id,
+    title,
+    description,
+    icon,
+    type: 'command' as const,
+    action,
+    keywords,
+    category: category ?? 'Browser',
+    ...metadata,
+  } as ActionCommandItem | FlowCommandItem;
+}
 
 export function getCommands(context: CommandContext): CommandItem[] {
   const tab = context.activeTab;
@@ -254,9 +280,9 @@ export function getCommands(context: CommandContext): CommandItem[] {
         context.activeGroup.collapsed ? 'Expand current tab group' : 'Collapse current tab group',
         'Change whether its tabs are shown',
         '⌄',
-        'groups:update',
+        '',
         ['group', 'collapse', 'expand'],
-        { permission: { permissions: ['tabGroups'] }, category: 'Groups' },
+        { flow: 'toggle-group', permission: { permissions: ['tabGroups'] }, category: 'Groups' },
       ),
     );
     items.push(

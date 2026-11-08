@@ -11,31 +11,28 @@ const distDir = path.join(projectRoot, 'dist');
 const sourceManifestPath = path.join(projectRoot, 'src', 'manifest.json');
 const manifestPath = path.join(distDir, 'manifest.json');
 const manifest = JSON.parse(fs.readFileSync(sourceManifestPath, 'utf8'));
+const packageMetadata = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
+const artifacts = JSON.parse(fs.readFileSync(path.join(projectRoot, 'extension-artifacts.json'), 'utf8'));
+const noticesPath = artifacts.notices;
+manifest.version = packageMetadata.version;
+manifest.web_accessible_resources = [
+  {
+    resources: Object.values(artifacts.fonts.families).flatMap((family) => family.faces.map((face) => face.path)),
+    matches: artifacts.fonts.matches,
+  },
+];
 
 if (!fs.existsSync(path.join(distDir, manifest.background.service_worker))) {
   throw new Error(`Build output is missing ${manifest.background.service_worker}`);
 }
-if (!fs.existsSync(path.join(distDir, 'src', 'popup', 'index.html'))) {
+if (!fs.existsSync(path.join(distDir, artifacts.popupHtml))) {
   throw new Error('Build output is missing the native extension popup.');
 }
-const uiFontFiles = [
-  ['open-sans', 'OpenSans-Latin.woff2'],
-  ['open-sans', 'OpenSans-LatinExt.woff2'],
-  ['outfit', 'Outfit-Latin.woff2'],
-  ['outfit', 'Outfit-LatinExt.woff2'],
-  ['nunito-sans', 'NunitoSans-Latin.woff2'],
-  ['nunito-sans', 'NunitoSans-LatinExt.woff2'],
-  ['sora', 'Sora-Latin.woff2'],
-  ['sora', 'Sora-LatinExt.woff2'],
-  ['ibm-plex-mono', 'IBMPlexMono-400-Latin.woff2'],
-  ['ibm-plex-mono', 'IBMPlexMono-500-Latin.woff2'],
-  ['ibm-plex-mono', 'IBMPlexMono-600-Latin.woff2'],
-  ['ibm-plex-mono', 'IBMPlexMono-700-Latin.woff2'],
-];
-if (uiFontFiles.some(([family, file]) => !fs.existsSync(path.join(distDir, 'assets', 'fonts', family, file)))) {
-  throw new Error('Build output is missing the isolated UI font asset.');
+const exposedResources = manifest.web_accessible_resources?.flatMap((entry) => entry.resources) ?? [];
+if (exposedResources.some((file) => !file.startsWith('assets/fonts/') || !fs.existsSync(path.join(distDir, file)))) {
+  throw new Error('Build output is missing an exposed UI font asset.');
 }
-const contentBundles = ['content-command.js', 'content-tabs.js'];
+const contentBundles = Object.values(artifacts.contentSurfaces).map((surface) => surface.file);
 if (contentBundles.some((file) => !fs.existsSync(path.join(distDir, file)))) {
   throw new Error('Build output is missing one of the on-demand page surfaces.');
 }
@@ -53,15 +50,13 @@ if (
   throw new Error('The extension build unexpectedly includes page injection or host permissions.');
 }
 
-fs.copyFileSync(sourceManifestPath, manifestPath);
-const notices = fs
-  .readFileSync(path.join(projectRoot, 'THIRD_PARTY_NOTICES.md'), 'utf8')
-  .replaceAll('public/assets/', 'assets/');
+fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+const notices = fs.readFileSync(path.join(projectRoot, noticesPath), 'utf8').replaceAll('public/assets/', 'assets/');
 const runtimeLicenses = ['react', 'react-dom'].map(
   (dependency) =>
     `\n\n## ${dependency}\n\n${fs.readFileSync(path.join(projectRoot, 'node_modules', dependency, 'LICENSE'), 'utf8')}`,
 );
-fs.writeFileSync(path.join(distDir, 'THIRD_PARTY_NOTICES.md'), notices + runtimeLicenses.join(''));
+fs.writeFileSync(path.join(distDir, noticesPath), notices + runtimeLicenses.join(''));
 console.log('✓ Copied and validated extension manifest');
 
 console.log('✓ Post-build steps completed');

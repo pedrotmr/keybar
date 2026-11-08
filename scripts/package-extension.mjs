@@ -8,13 +8,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const manifest = JSON.parse(readFileSync(path.join(dist, 'manifest.json'), 'utf8'));
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+const artifacts = JSON.parse(readFileSync(path.join(root, 'extension-artifacts.json'), 'utf8'));
 if (manifest.version !== pkg.version) throw new Error('Package and extension versions do not match.');
 for (const file of [
-  'background.js',
-  'content-command.js',
-  'content-tabs.js',
-  'src/popup/index.html',
-  'THIRD_PARTY_NOTICES.md',
+  manifest.background.service_worker,
+  ...Object.values(artifacts.contentSurfaces).map((surface) => surface.file),
+  artifacts.popupHtml,
+  artifacts.notices,
 ]) {
   readFileSync(path.join(dist, file));
 }

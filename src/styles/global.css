@@ -139,7 +139,6 @@ body:has(.command-center.is-compact-empty),
   min-height: var(--cc-compact-popup-height);
 }
 
-/* Popup height: 56px search row + seven 46px result rows + 20px list inset. */
 html:has(.command-center.is-initial-expanded-view),
 body:has(.command-center.is-initial-expanded-view),
 #root:has(.command-center.is-initial-expanded-view) {
@@ -652,9 +651,6 @@ mark {
   display: none;
 }
 
-/*
- * Row actions. Hovering or focusing the actions button reveals it beside the row content; touch screens keep it visible.
- */
 .result-actions-trigger {
   display: grid;
   width: 28px;
@@ -753,7 +749,6 @@ mark {
   margin: 8px;
   overflow: hidden;
   border: 1px solid var(--cc-border);
-  /* Concentric with the bar: its 18px radius minus the 8px inset. */
   border-radius: 10px;
   background: var(--cc-panel);
   color: var(--cc-text);

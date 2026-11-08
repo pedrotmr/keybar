@@ -10,6 +10,7 @@ import type {
   CommandPaletteMode,
 } from './types';
 import type { SearchProviderDefinition } from '@/utils/searchProviders';
+import type { BulkCloseAction } from '@/utils/bulkClose';
 
 export const groupColors = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
 export const actionDockId = 'command-center-actions';
@@ -135,29 +136,14 @@ export const findPaletteResults = (
   return searchProviderItems(items, query, activeProvider, allowFallback);
 };
 
-export const getConfirmCloseCount = (
-  commandId: string,
-  tabCountInWindow: number,
-  tabsToRightCount: number,
-  activeGroupTabCount: number,
-): number => {
-  if (commandId === 'close-other-tabs') {
-    return Math.max(0, tabCountInWindow - 1);
-  }
+export const getConfirmCloseTitle = (action: BulkCloseAction, count: number): string => {
+  const noun = count === 1 ? 'tab' : 'tabs';
 
-  if (commandId === 'close-right-tabs') {
-    return tabsToRightCount;
-  }
-
-  return activeGroupTabCount;
-};
-
-export const getConfirmCloseTitle = (commandId: string, count: number, noun: string): string => {
-  if (commandId === 'close-other-tabs') {
+  if (action === 'tabs:close-others') {
     return `Close ${count} other ${noun}?`;
   }
 
-  if (commandId === 'close-right-tabs') {
+  if (action === 'tabs:close-right') {
     return `Close ${count} ${noun} to the right?`;
   }
 

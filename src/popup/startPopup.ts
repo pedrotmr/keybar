@@ -15,6 +15,7 @@ import {
   installTabSwitcherKeyReleaseMonitor,
   wasTabSwitcherModifierReleasedAfter,
 } from '@/utils/tabSwitcherKeyRelease';
+import { consumePopupLaunchIntent, parsePopupLaunchFallback } from '@/utils/popupLaunchIntent';
 
 interface CommandCenterTiming {
   name: string;
@@ -65,7 +66,8 @@ const guardShortcutChordOnOpen = (): void => {
 
 export const startPopup = async (): Promise<void> => {
   const urlParameters = new URLSearchParams(window.location.search);
-  const isFallbackWindow = urlParameters.has('mode') && urlParameters.has('openedAt');
+  const fallbackIntent = parsePopupLaunchFallback(urlParameters);
+  const isFallbackWindow = fallbackIntent !== null;
 
   if (isFallbackWindow) {
     document.documentElement.dataset.popupWindow = 'fallback';
@@ -99,38 +101,30 @@ export const startPopup = async (): Promise<void> => {
     return;
   }
 
-  const urlOpenedAt = Number(urlParameters.get('openedAt'));
+  popupRequestedAt = fallbackIntent?.openedAt ?? null;
 
-  if (Number.isFinite(urlOpenedAt) && urlOpenedAt > 0) {
-    popupRequestedAt = urlOpenedAt;
-  }
-
-  let storedMode: string | null = null;
-  let switcherAutoSwitchOnRelease = false;
+  let switcherAutoSwitchOnRelease = fallbackIntent?.autoSwitchOnRelease ?? false;
   let switcherModifierReleased = false;
-  let switcherOpenedAt = 0;
+  let switcherOpenedAt = fallbackIntent?.openedAt ?? 0;
+  let storedMode: string | null = fallbackIntent?.mode ?? null;
   let initialTheme: ThemePreferences = cachedTheme;
 
   try {
-    const [sessionValues, themeValues] = await Promise.all([
-      chrome.storage.session.get(['nextPaletteMode', 'nextTabSwitcherAutoSwitchOnRelease', 'paletteRequestedAt']),
+    const [launchIntent, themeValues] = await Promise.all([
+      consumePopupLaunchIntent(),
       chrome.storage.local.get(themePreferencesStorageKey),
     ]);
 
-    storedMode = sessionValues.nextPaletteMode ?? null;
-    switcherAutoSwitchOnRelease = sessionValues.nextTabSwitcherAutoSwitchOnRelease === true;
-    const sessionRequestedAt = sessionValues.paletteRequestedAt;
+    storedMode = launchIntent.mode ?? storedMode;
+    switcherAutoSwitchOnRelease = launchIntent.autoSwitchOnRelease ?? false;
 
-    if (typeof sessionRequestedAt === 'number' && sessionRequestedAt > 0) {
-      popupRequestedAt = sessionRequestedAt;
+    if (launchIntent.openedAt !== undefined) {
+      popupRequestedAt = launchIntent.openedAt;
     }
 
     switcherOpenedAt = popupRequestedAt ?? 0;
     switcherModifierReleased = switcherAutoSwitchOnRelease && wasTabSwitcherModifierReleasedAfter(switcherOpenedAt);
     initialTheme = normalizeThemePreferences(themeValues[themePreferencesStorageKey] ?? defaultThemePreferences);
-    void chrome.storage.session
-      .remove(['nextPaletteMode', 'nextTabSwitcherAutoSwitchOnRelease', 'paletteRequestedAt'])
-      .catch(() => undefined);
   } catch {
     // Cached appearance and the normal command mode keep the popup usable if storage is unavailable.
   }

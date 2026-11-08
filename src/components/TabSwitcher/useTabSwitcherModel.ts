@@ -66,10 +66,7 @@ export const useTabSwitcherModel = ({
     setMessage('That tab may have closed. Refreshing recent tabs.');
 
     try {
-      const [recentTabs, current] = await Promise.all([
-        sendBackground<ManagedTab[]>('tabs:recent'),
-        sendBackground<chrome.tabs.Tab | null>('tabs:current'),
-      ]);
+      const [recentTabs, current] = await Promise.all([sendBackground('tabs:recent'), sendBackground('tabs:current')]);
 
       setTabs(recentTabs);
       setCurrentTabId(current?.id ?? null);
@@ -229,10 +226,7 @@ export const useTabSwitcherModel = ({
     const handlePageHide = () => hideSwitcher();
     window.addEventListener('pagehide', handlePageHide);
 
-    void Promise.all([
-      sendBackground<ManagedTab[]>('tabs:recent'),
-      sendBackground<chrome.tabs.Tab | null>('tabs:current'),
-    ])
+    void Promise.all([sendBackground('tabs:recent'), sendBackground('tabs:current')])
       .then(async ([recentTabs, current]) => {
         if (!mounted) {
           return;
@@ -244,7 +238,7 @@ export const useTabSwitcherModel = ({
         windowIdRef.current = current?.windowId;
 
         switcherShownRef.current = true;
-        const opened = await sendBackground<{ pendingCycles?: number }>('tabs:switcher-shown', {
+        const opened = await sendBackground('tabs:switcher-shown', {
           windowId: current?.windowId,
           surface,
         }).catch(() => ({ pendingCycles: 0 }));
@@ -271,7 +265,7 @@ export const useTabSwitcherModel = ({
           activateAfterShortcutRef.current(recentTabs[nextIndex]);
         }
 
-        void sendBackground<Record<number, string>>('tabs:recent-previews', {
+        void sendBackground('tabs:recent-previews', {
           tabIds: recentTabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
         })
           .then((previews) => {

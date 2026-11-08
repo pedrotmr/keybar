@@ -1,0 +1,75 @@
+{
+  "popupHtml": "src/popup/index.html",
+  "notices": "THIRD_PARTY_NOTICES.md",
+  "background": {
+    "entry": "src/background/index.ts"
+  },
+  "contentSurfaces": {
+    "commands": {
+      "entry": "src/overlay/command.tsx",
+      "file": "content-command.js"
+    },
+    "tabs": {
+      "entry": "src/overlay/tabs.tsx",
+      "file": "content-tabs.js"
+    }
+  },
+  "fonts": {
+    "matches": ["http://*/*", "https://*/*"],
+    "families": {
+      "open-sans": {
+        "cssFamily": "Keybar Open Sans",
+        "faces": [
+          {
+            "path": "assets/fonts/open-sans/OpenSans-Latin.woff2",
+            "weight": "300 800",
+            "subset": "latin"
+          },
+          {
+            "path": "assets/fonts/open-sans/OpenSans-LatinExt.woff2",
+            "weight": "300 800",
+            "subset": "latinExt"
+          }
+        ]
+      },
+      "outfit": {
+        "cssFamily": "Keybar Outfit",
+        "faces": [
+          { "path": "assets/fonts/outfit/Outfit-Latin.woff2", "weight": "100 900", "subset": "latin" },
+          { "path": "assets/fonts/outfit/Outfit-LatinExt.woff2", "weight": "100 900", "subset": "latinExt" }
+        ]
+      },
+      "nunito-sans": {
+        "cssFamily": "Keybar Nunito Sans",
+        "faces": [
+          {
+            "path": "assets/fonts/nunito-sans/NunitoSans-Latin.woff2",
+            "weight": "200 1000",
+            "subset": "latin"
+          },
+          {
+            "path": "assets/fonts/nunito-sans/NunitoSans-LatinExt.woff2",
+            "weight": "200 1000",
+            "subset": "latinExt"
+          }
+        ]
+      },
+      "sora": {
+        "cssFamily": "Keybar Sora",
+        "faces": [
+          { "path": "assets/fonts/sora/Sora-Latin.woff2", "weight": "100 800", "subset": "latin" },
+          { "path": "assets/fonts/sora/Sora-LatinExt.woff2", "weight": "100 800", "subset": "latinExt" }
+        ]
+      },
+      "ibm-plex-mono": {
+        "cssFamily": "Keybar IBM Plex Mono",
+        "faces": [
+          { "path": "assets/fonts/ibm-plex-mono/IBMPlexMono-400-Latin.woff2", "weight": "400", "subset": "latin" },
+          { "path": "assets/fonts/ibm-plex-mono/IBMPlexMono-500-Latin.woff2", "weight": "500", "subset": "latin" },
+          { "path": "assets/fonts/ibm-plex-mono/IBMPlexMono-600-Latin.woff2", "weight": "600", "subset": "latin" },
+          { "path": "assets/fonts/ibm-plex-mono/IBMPlexMono-700-Latin.woff2", "weight": "700", "subset": "latin" }
+        ]
+      }
+    }
+  }
+}

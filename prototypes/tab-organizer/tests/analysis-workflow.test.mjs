@@ -31,6 +31,7 @@ async function harness(
     pauseCreateOnce: false,
     failCreates: false,
     failRecoveryReadOnce: false,
+    failGroupOperation: false,
     created: [],
   };
   const event = () => {
@@ -102,6 +103,10 @@ async function harness(
         state.removed.push(id);
         state.tabs = state.tabs.filter((tab) => tab.id !== id);
       },
+      group: async () => {
+        if (state.failGroupOperation) throw new Error('tab group operation failed');
+        return 100;
+      },
       create: async (properties) => {
         state.created.push(properties);
         if (state.pauseCreateOnce) {
@@ -112,7 +117,7 @@ async function harness(
         return { id: 100 + state.created.length };
       },
     },
-    tabGroups: { query: async () => [] },
+    tabGroups: { query: async () => [], update: async () => ({}) },
     storage: {
       local: {
         get: async () => ({ tabOrganizerProviderSettings: structuredClone(settings) }),
@@ -220,6 +225,16 @@ test('invalidation while inference is pending prevents that response from repopu
   assert.equal((await send({ type: 'analyze' })).resultSource, 'fresh');
 });
 
+test('a stale popup cancellation cannot cancel a newer analysis run', async (t) => {
+  const { state, send } = await harness(t);
+  state.pause = true;
+  const pendingAnalysis = send({ type: 'analyze', runId: 'current-run' });
+  await new Promise((resolve) => setImmediate(resolve));
+  await send({ type: 'cancel-analysis', runId: 'stale-run' });
+  state.deferred.shift()();
+  assert.equal((await pendingAnalysis).resultSource, 'fresh');
+});
+
 test('applying a local closure skips a duplicate if its keeper has disappeared', async (t) => {
   const { state, send } = await harness(t);
   const result = await send({ type: 'analyze' });
@@ -228,6 +243,20 @@ test('applying a local closure skips a duplicate if its keeper has disappeared',
   assert.equal(applied.closedCount, 0);
   assert.equal(applied.skipped.length, 1);
   assert.deepEqual(state.removed, []);
+});
+
+test('apply reports browser operation failures separately from tabs that changed', async (t) => {
+  const { state, send } = await harness(t);
+  state.failGroupOperation = true;
+  const applied = await send({
+    type: 'apply',
+    selection: {
+      groups: [{ name: 'Docs', tabs: [state.tabs[0], state.tabs[2]] }],
+      closeIds: [],
+    },
+  });
+  assert.deepEqual(applied.skipped, []);
+  assert.deepEqual(applied.failures, ['Docs']);
 });
 
 test('progress expands original tabs, includes the popup run ID and cannot be applied or cached early', async (t) => {
