@@ -23,7 +23,7 @@ export function Popup({
   const [cycleVersion, setCycleVersion] = useState(0);
 
   useEffect(() => {
-    void sendBackground<chrome.tabs.Tab | null>('tabs:current')
+    void sendBackground('tabs:current')
       .then((tab) => sendBackground('popup:ready', { windowId: tab?.windowId, surface }))
       .catch(() => undefined);
   }, [surface]);

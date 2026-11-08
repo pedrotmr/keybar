@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
+import artifacts from './extension-artifacts.json';
 
 export function contentConfig(surface: 'commands' | 'tabs') {
-  const entry = surface === 'tabs' ? 'src/overlay/tabs.tsx' : 'src/overlay/command.tsx';
-  const fileName = surface === 'tabs' ? 'content-tabs.js' : 'content-command.js';
+  const { entry, file: fileName } = artifacts.contentSurfaces[surface];
 
   return defineConfig({
     configFile: false,

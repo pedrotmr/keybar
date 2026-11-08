@@ -1,17 +1,25 @@
 import { validateRequest } from '@/utils/validateRequest';
-import type { RenamedTab, SplitAwareTab } from '@/types';
-import { markTabNameClosed, normalizeTabNames, reconcileTabNames, type TabNameMap } from '@/utils/tabNamePersistence';
+import type { BackgroundAction, BackgroundResult } from '@/utils/chromeMessages';
+import type { SplitAwareTab } from '@/types';
 import { asPositiveInteger, normalizeNavigationUrl, normalizeSavedNavigationUrl } from '@/utils/chromeHelpers';
 import { isTabInSplitView } from '@/utils/splitViews';
 import { TAB_GROUP_ID_NONE } from '@/utils/chromeApiConstants';
-import { bulkCloseTabIds, isBulkCloseAction } from '@/utils/bulkClose';
+import { bulkCloseTabIds } from '@/utils/bulkClose';
 import { isOverlayPage } from '@/utils/pageSupport';
 import { OverlayTabRegistry } from '@/utils/overlayTabRegistry';
-import { SerialTaskQueue } from '@/utils/serialTaskQueue';
 import { TabPreviewCache, type TabPreviewRecord } from '@/utils/tabPreviewCache';
-
-const TAB_NAMES_KEY = 'renamedTabs';
-const TAB_NAMES_SESSION_KEY = 'tabNameIdsCurrentSession';
+import { writePopupLaunchIntent } from '@/utils/popupLaunchIntent';
+import { installTabSwitcherKeyReleaseMonitorInPage } from '@/utils/tabSwitcherKeyRelease';
+import artifacts from '../../extension-artifacts.json';
+import {
+  getTabCustomName,
+  getTabNames,
+  handleClosedTabName,
+  handleCreatedTabName,
+  handleUpdatedTabName,
+  renameTab,
+  tabNameSessionInitialization,
+} from './tabNames';
 
 const TAB_PREVIEW_PREFIX = 'tabPreview:';
 const TAB_PREVIEW_IDS_KEY = 'tabPreviewIds';
@@ -20,18 +28,9 @@ const OVERLAY_TAB_IDS_SESSION_KEY = 'keybarOverlayTabIds';
 const MAX_TAB_PREVIEWS = 5;
 const TAB_SWITCHER_OPENING_TIMEOUT_MS = 5000;
 
-const launchModeKey = 'nextPaletteMode';
-const launchSwitcherReleaseKey = 'nextTabSwitcherAutoSwitchOnRelease';
-
 const ownExtensionUrlPrefix = chrome.runtime.getURL('');
-const popupPath = 'src/popup/index.html';
+const popupPath = artifacts.popupHtml;
 
-interface Request {
-  action?: string;
-  [key: string]: unknown;
-}
-
-const tabNameOperations = new SerialTaskQueue();
 const tabPreviewCache = new TabPreviewCache(
   {
     get: (key) => chrome.storage.session.get(key),
@@ -43,10 +42,6 @@ const tabPreviewCache = new TabPreviewCache(
   MAX_TAB_PREVIEWS,
 );
 
-let namedTabIds = new Set<string>();
-let tabNameReattachmentPending = false;
-let tabNameReconcileTimer: ReturnType<typeof setTimeout> | null = null;
-let tabNameSessionSafe = true;
 let tabChangeBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
 
 const overlayTabRegistry = new OverlayTabRegistry({
@@ -69,6 +64,16 @@ const respond = <T>(data: T): { success: true; data: T } => {
   return { success: true, data };
 };
 
+const assertNever = (value: never): never => {
+  void value;
+  throw new Error('Unknown command.');
+};
+
+const typedBackgroundResult = <Action extends BackgroundAction>(
+  _action: Action,
+  result: NoInfer<BackgroundResult<Action>> | PromiseLike<NoInfer<BackgroundResult<Action>>>,
+): Promise<BackgroundResult<Action>> => Promise.resolve(result);
+
 const normalizeError = (error: unknown): string => {
   return error instanceof Error ? error.message : 'The browser action failed.';
 };
@@ -90,58 +95,6 @@ const broadcastPermissionChanges = (): void => {
   void overlayTabRegistry.broadcast({ action: 'ui:permissions-changed' }).catch(() => undefined);
 };
 
-const withTabNamesMutation = <T>(mutate: (names: TabNameMap) => Promise<T> | T): Promise<T> => {
-  return tabNameOperations.enqueue(async () => {
-    const stored = await chrome.storage.local.get(TAB_NAMES_KEY);
-    const names = normalizeTabNames(stored[TAB_NAMES_KEY]);
-    const result = await mutate(names);
-
-    if (result === false) {
-      return result;
-    }
-
-    await chrome.storage.local.set({ [TAB_NAMES_KEY]: names });
-    namedTabIds = getNamedTabIds(names);
-    return result;
-  });
-};
-
-const initializeTabNameSession = async (): Promise<void> => {
-  const [session, stored] = await Promise.all([
-    chrome.storage.session.get(TAB_NAMES_SESSION_KEY),
-    chrome.storage.local.get(TAB_NAMES_KEY),
-  ]);
-
-  const savedNames = normalizeTabNames(stored[TAB_NAMES_KEY]);
-  namedTabIds = getNamedTabIds(savedNames);
-  tabNameReattachmentPending = Object.keys(savedNames).some(isStaleTabNameKey);
-
-  if (session[TAB_NAMES_SESSION_KEY]) {
-    if (tabNameReattachmentPending) {
-      scheduleTabNameReconciliation();
-    }
-
-    return;
-  }
-
-  await tabNameOperations.drain();
-
-  if (Object.keys(savedNames).length) {
-    const tabs = await chrome.tabs.query({});
-    await persistReconciledTabNames(tabs, savedNames, true);
-  }
-
-  await chrome.storage.session.set({ [TAB_NAMES_SESSION_KEY]: true });
-
-  if (tabNameReattachmentPending) {
-    scheduleTabNameReconciliation();
-  }
-};
-
-const tabNameSessionInitialization = initializeTabNameSession().catch(() => {
-  tabNameSessionSafe = false;
-});
-
 const configureActionForTab = async (tabId: number, url?: string): Promise<void> => {
   const resolvedUrl = url ?? (await chrome.tabs.get(tabId)).url;
   await chrome.action.setPopup({ tabId, popup: isOverlayPage(resolvedUrl) ? '' : popupPath });
@@ -162,11 +115,7 @@ const openPopup = async (
   autoSwitchOnRelease = false,
   openedAt = Date.now(),
 ): Promise<void> => {
-  await chrome.storage.session.set({
-    [launchModeKey]: mode,
-    [launchSwitcherReleaseKey]: autoSwitchOnRelease,
-    paletteRequestedAt: openedAt,
-  });
+  await writePopupLaunchIntent({ mode, autoSwitchOnRelease, openedAt });
   await chrome.action.setPopup({ tabId, popup: popupPath });
 
   try {
@@ -207,7 +156,7 @@ const openOverlay = async (
   }
 
   await chrome.tabs.sendMessage(tabId, { action: 'overlay:close', switching: true }).catch(() => undefined);
-  const script = mode === 'tabs' ? 'content-tabs.js' : 'content-command.js';
+  const script = artifacts.contentSurfaces[mode].file;
   await chrome.scripting.executeScript({ target: { tabId }, files: [script] });
   const response = (await chrome.tabs.sendMessage(tabId, request)) as { success?: boolean } | undefined;
 
@@ -320,28 +269,7 @@ const installTabSwitcherReleaseMonitor = (tabId: number): Promise<void> => {
     .executeScript({
       target: { tabId },
       world: 'ISOLATED',
-      func: () => {
-        const isolatedWindow = window as Window & {
-          __keybarKeyReleaseState?: { lastModifierReleaseAt: number };
-        };
-
-        if (isolatedWindow.__keybarKeyReleaseState) {
-          return;
-        }
-
-        const state = { lastModifierReleaseAt: 0 };
-        isolatedWindow.__keybarKeyReleaseState = state;
-        window.addEventListener(
-          'keyup',
-          (event: KeyboardEvent) => {
-            if (!event.isTrusted) return;
-            if (event.key === 'Meta' || event.key === 'Control' || event.key === 'Alt') {
-              state.lastModifierReleaseAt = Date.now();
-            }
-          },
-          true,
-        );
-      },
+      func: installTabSwitcherKeyReleaseMonitorInPage,
     })
     .then(() => undefined)
     .catch(() => undefined);
@@ -472,10 +400,6 @@ const isCapturablePage = (url?: string): boolean => {
 
 const removeTabPreview = async (tabId: number): Promise<void> => {
   await tabPreviewCache.remove(tabId);
-};
-
-const clearTabPreviews = async (): Promise<void> => {
-  await tabPreviewCache.clear();
 };
 
 const captureTabPreview = async (tabId: number, windowId: number, expectedUrl?: string): Promise<void> => {
@@ -632,26 +556,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  void tabNameSessionInitialization
-    .then(() =>
-      withTabNamesMutation(async (names) => {
-        if (!names[String(tabId)]) {
-          return false;
-        }
-
-        const currentTabs = await chrome.tabs.query({});
-        return markTabNameClosed(names, tabId, Date.now(), currentTabs);
-      }),
-    )
-    .then((updated) => {
-      if (!updated) {
-        return;
-      }
-
-      tabNameReattachmentPending = true;
-      scheduleTabNameReconciliation();
-    })
-    .catch(() => undefined);
+  void handleClosedTabName(tabId).catch(() => undefined);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -659,46 +564,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     void configureActionForTab(tabId, tab.url).catch(() => undefined);
   }
 
-  if (tabNameReattachmentPending && (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title)) {
-    scheduleTabNameReconciliation();
-  }
-
-  if (!changeInfo.url && !changeInfo.title) {
-    return;
-  }
-
-  void tabNameSessionInitialization
-    .then(() => {
-      if (!namedTabIds.has(String(tabId))) {
-        return false;
-      }
-
-      return withTabNamesMutation((names) => {
-        const saved = names[String(tabId)];
-
-        if (!saved) {
-          return false;
-        }
-
-        if (typeof tab.url === 'string') {
-          saved.url = tab.url;
-        }
-
-        if (typeof tab.title === 'string') {
-          saved.originalTitle = tab.title;
-        }
-
-        saved.closedAt = undefined;
-        saved.updatedAt = Date.now();
-        return true;
-      });
-    })
-    .then((updated) => {
-      if (updated) {
-        scheduleTabNameReconciliation();
-      }
-    })
-    .catch(() => undefined);
+  void handleUpdatedTabName(tabId, changeInfo, tab).catch(() => undefined);
 });
 
 chrome.tabs.onCreated.addListener((tab) => {
@@ -706,7 +572,7 @@ chrome.tabs.onCreated.addListener((tab) => {
     void configureActionForTab(tab.id, tab.url).catch(() => undefined);
   }
 
-  void tabNameSessionInitialization.then(scheduleTabNameReconciliation).catch(() => undefined);
+  void handleCreatedTabName().catch(() => undefined);
 });
 
 chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse) => {
@@ -717,8 +583,11 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
   return true;
 });
 
-const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.MessageSender): Promise<unknown> => {
-  const message: Request = validateRequest(rawMessage, sender, chrome.runtime.id);
+const handleRequest = async (
+  rawMessage: unknown,
+  sender: chrome.runtime.MessageSender,
+): Promise<BackgroundResult<BackgroundAction>> => {
+  const message = validateRequest(rawMessage, sender, chrome.runtime.id);
   const action = message.action;
 
   if (
@@ -733,9 +602,9 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
   switch (action) {
     case 'ui:tabs-changed':
     case 'ui:tabs-cycle':
-      return true;
+      return typedBackgroundResult(action, true);
     case 'permissions:get-all':
-      return chrome.permissions.getAll();
+      return typedBackgroundResult(action, chrome.permissions.getAll());
 
     case 'permissions:contains': {
       const permissions = (
@@ -743,10 +612,13 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
       ) as chrome.permissions.Permissions['permissions'];
 
       const origins = Array.isArray(message.origins) ? (message.origins as string[]) : [];
-      return chrome.permissions.contains({
-        permissions,
-        origins,
-      });
+      return typedBackgroundResult(
+        action,
+        chrome.permissions.contains({
+          permissions,
+          origins,
+        }),
+      );
     }
 
     case 'permissions:open-request': {
@@ -758,7 +630,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
       const requested = [...new Set((permissions ?? []).filter((permission) => allowed.has(permission)))];
 
       if (!requested.length) {
-        return false;
+        return typedBackgroundResult(action, false);
       }
 
       const url = chrome.runtime.getURL(
@@ -766,92 +638,72 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
       );
 
       await chrome.windows.create({ url, type: 'popup', width: 420, height: 300, focused: true });
-      return true;
-    }
-
-    case 'permissions:remove': {
-      const permissions = (
-        Array.isArray(message.permissions) ? message.permissions : []
-      ) as chrome.permissions.Permissions['permissions'];
-
-      const origins = Array.isArray(message.origins) ? (message.origins as string[]) : [];
-      return chrome.permissions.remove({ permissions, origins });
+      return typedBackgroundResult(action, true);
     }
 
     case 'browser:split-capabilities': {
       const tabsApi = chrome.tabs as typeof chrome.tabs & { createSplit?: unknown; unsplit?: unknown };
-      return { create: typeof tabsApi.createSplit === 'function', unsplit: typeof tabsApi.unsplit === 'function' };
+      return typedBackgroundResult(action, {
+        create: typeof tabsApi.createSplit === 'function',
+        unsplit: typeof tabsApi.unsplit === 'function',
+      });
     }
 
     case 'tabs:current':
-      return getActiveTab();
+      return typedBackgroundResult(action, getActiveTab());
     case 'tabs:list':
-      return listTabs();
+      return typedBackgroundResult(action, listTabs());
     case 'tabs:recent':
-      return listRecentTabs();
+      return typedBackgroundResult(action, listRecentTabs());
     case 'tabs:recent-previews':
-      return getTabPreviews(Array.isArray(message.tabIds) ? message.tabIds.map(Number) : []);
+      return typedBackgroundResult(action, getTabPreviews(message.tabIds));
 
     case 'tabs:switcher-shown': {
-      const windowId = asPositiveInteger(message.windowId) ?? asPositiveInteger(sender.tab?.windowId);
+      const windowId = message.windowId ?? asPositiveInteger(sender.tab?.windowId);
 
       if (windowId === undefined) {
-        return { pendingCycles: 0 };
+        return typedBackgroundResult(action, { pendingCycles: 0 });
       }
 
       const surface = message.surface === 'popup' ? 'popup' : 'overlay';
       const pendingCycles = await rememberTabSwitcher(windowId, surface);
-      return { pendingCycles };
+      return typedBackgroundResult(action, { pendingCycles });
     }
 
     case 'tabs:switcher-hidden': {
-      const windowId = asPositiveInteger(message.windowId) ?? asPositiveInteger(sender.tab?.windowId);
+      const windowId = message.windowId ?? asPositiveInteger(sender.tab?.windowId);
 
       if (windowId !== undefined) {
         await clearTabSwitcher(windowId);
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'popup:ready': {
-      const windowId = asPositiveInteger(message.windowId) ?? asPositiveInteger(sender.tab?.windowId);
+      const windowId = message.windowId ?? asPositiveInteger(sender.tab?.windowId);
 
       if (windowId !== undefined && message.surface !== 'tabs') {
         await clearTabSwitcher(windowId);
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
-    case 'tabs:previews-clear':
-      await clearTabPreviews();
-      return true;
-
     case 'tabs:activate': {
-      const sourceTabId = asPositiveInteger(message.sourceTabId) ?? asPositiveInteger(sender.tab?.id);
-      return activateTab(Number(message.tabId), sourceTabId);
+      const sourceTabId = message.sourceTabId ?? asPositiveInteger(sender.tab?.id);
+      return typedBackgroundResult(action, activateTab(message.tabId, sourceTabId ?? undefined));
     }
 
     case 'tabs:rename':
-      return renameTab(Number(message.tabId), String(message.name ?? ''));
+      return typedBackgroundResult(action, renameTab(message.tabId, message.name));
     case 'tabs:close':
-      await chrome.tabs.remove(Number(message.tabId));
-      return true;
+      await chrome.tabs.remove(message.tabId);
+      return typedBackgroundResult(action, true);
 
     case 'tabs:close-confirmed': {
-      const anchorTabId = asPositiveInteger(message.anchorTabId);
+      const anchorTabId = message.anchorTabId;
       const ids = message.tabIds;
-      if (
-        !anchorTabId ||
-        !isBulkCloseAction(message.closeAction) ||
-        !Array.isArray(ids) ||
-        !ids.length ||
-        ids.some((id) => asPositiveInteger(id) === undefined) ||
-        new Set(ids).size !== ids.length
-      ) {
-        throw new Error('Invalid tab close confirmation.');
-      }
       const anchor = await chrome.tabs.get(anchorTabId).catch(() => null);
       if (!anchor || anchor.windowId !== message.windowId)
         throw new Error('Tabs changed. Cancel and review the tabs before closing.');
@@ -863,7 +715,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         throw new Error('Tabs changed. Cancel and review the tabs before closing.');
       }
       await chrome.tabs.remove(currentIds);
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:close-active': {
@@ -873,7 +725,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.tabs.remove(tab.id);
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:close-others': {
@@ -888,7 +740,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         }
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:close-right': {
@@ -903,7 +755,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         }
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:duplicate-active': {
@@ -911,16 +763,14 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
 
       if (tab?.id) {
         const duplicate = await chrome.tabs.duplicate(tab.id);
-        const stored = await chrome.storage.local.get(TAB_NAMES_KEY);
-        const names = normalizeTabNames(stored[TAB_NAMES_KEY]);
-        const originalName = names[String(tab.id)]?.customName;
+        const originalName = await getTabCustomName(tab.id);
 
         if (duplicate?.id !== undefined && originalName) {
           await renameTab(duplicate.id, originalName);
         }
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:pin-active': {
@@ -930,12 +780,12 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.tabs.update(tab.id, { pinned: !tab.pinned });
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:pin':
-      await chrome.tabs.update(Number(message.tabId), { pinned: Boolean(message.pinned) });
-      return true;
+      await chrome.tabs.update(message.tabId, { pinned: message.pinned });
+      return typedBackgroundResult(action, true);
 
     case 'tabs:mute-active': {
       const tab = await getActiveTab();
@@ -944,12 +794,12 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.tabs.update(tab.id, { muted: !tab.mutedInfo?.muted });
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:mute':
-      await chrome.tabs.update(Number(message.tabId), { muted: Boolean(message.muted) });
-      return true;
+      await chrome.tabs.update(message.tabId, { muted: message.muted });
+      return typedBackgroundResult(action, true);
 
     case 'tabs:reload-active': {
       const tab = await getActiveTab();
@@ -958,7 +808,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.tabs.reload(tab.id);
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:hard-reload-active': {
@@ -968,7 +818,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.tabs.reload(tab.id, { bypassCache: true });
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:back': {
@@ -978,7 +828,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.tabs.goBack(tab.id);
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:forward': {
@@ -988,27 +838,27 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.tabs.goForward(tab.id);
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:copy-url': {
-      const tab = message.tabId === undefined ? await getActiveTab() : await chrome.tabs.get(Number(message.tabId));
-      return tab?.url ?? '';
+      const tab = message.tabId === undefined ? await getActiveTab() : await chrome.tabs.get(message.tabId);
+      return typedBackgroundResult(action, tab?.url ?? '');
     }
 
     case 'tabs:copy-title': {
-      const tab = message.tabId === undefined ? await getActiveTab() : await chrome.tabs.get(Number(message.tabId));
-      return tab?.title ?? '';
+      const tab = message.tabId === undefined ? await getActiveTab() : await chrome.tabs.get(message.tabId);
+      return typedBackgroundResult(action, tab?.title ?? '');
     }
 
     case 'tabs:zoom-in':
-      return setActiveTabZoom(action);
+      return typedBackgroundResult(action, setActiveTabZoom(action));
 
     case 'tabs:zoom-out':
-      return setActiveTabZoom(action);
+      return typedBackgroundResult(action, setActiveTabZoom(action));
 
     case 'tabs:zoom-reset':
-      return setActiveTabZoom(action);
+      return typedBackgroundResult(action, setActiveTabZoom(action));
 
     case 'tabs:move-active-new-window': {
       const tab = await getActiveTab();
@@ -1017,31 +867,31 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.windows.create({ tabId: tab.id, focused: true });
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:move-new-window':
-      await chrome.windows.create({ tabId: Number(message.tabId), focused: true });
-      return true;
+      await chrome.windows.create({ tabId: message.tabId, focused: true });
+      return typedBackgroundResult(action, true);
 
     case 'tabs:move': {
-      const tabId = Number(message.tabId);
-      const windowId = Number(message.windowId);
+      const tabId = message.tabId;
+      const windowId = message.windowId;
       await chrome.tabs.move(tabId, { windowId, index: -1 });
       await chrome.windows.update(windowId, { focused: true });
       await chrome.tabs.update(tabId, { active: true });
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:group': {
-      const tabId = Number(message.tabId);
-      const groupId = Number(message.groupId);
+      const tabId = message.tabId;
+      const groupId = message.groupId;
       await chrome.tabs.group({ tabIds: [tabId], groupId });
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:split-active':
-      return createSplitWithActive(Number(message.tabId));
+      return typedBackgroundResult(action, createSplitWithActive(message.tabId));
 
     case 'tabs:unsplit-active': {
       const tabsApi = chrome.tabs as typeof chrome.tabs & { unsplit?: (splitViewId: number) => Promise<void> };
@@ -1056,20 +906,20 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await tabsApi.unsplit(tab.splitViewId);
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'tabs:new':
       await chrome.tabs.create({ url: 'chrome://newtab/' });
-      return true;
+      return typedBackgroundResult(action, true);
     case 'windows:list':
-      return chrome.windows.getAll({ windowTypes: ['normal'], populate: true });
+      return typedBackgroundResult(action, chrome.windows.getAll({ windowTypes: ['normal'], populate: true }));
     case 'windows:new':
       await chrome.windows.create({ focused: true });
-      return true;
+      return typedBackgroundResult(action, true);
     case 'windows:new-incognito':
       await chrome.windows.create({ incognito: true, focused: true });
-      return true;
+      return typedBackgroundResult(action, true);
 
     case 'windows:minimize-active': {
       const tab = await getActiveTab();
@@ -1078,7 +928,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.windows.update(tab.windowId, { state: 'minimized' });
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'windows:maximize-active': {
@@ -1088,15 +938,15 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.windows.update(tab.windowId, { state: 'maximized' });
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'browser:open-url':
-      await openUrl(String(message.url ?? ''), sender.tab?.id);
-      return true;
+      await openUrl(message.url, sender.tab?.id);
+      return typedBackgroundResult(action, true);
 
     case 'browser:open-saved-url': {
-      const safeUrl = normalizeSavedNavigationUrl(String(message.url ?? ''));
+      const safeUrl = normalizeSavedNavigationUrl(message.url);
 
       if (!safeUrl) {
         throw new Error('This saved page uses an unsupported address.');
@@ -1104,78 +954,81 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
 
       await closeOverlayBeforeNavigation(sender.tab?.id);
       await chrome.tabs.create({ url: safeUrl });
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'browser:open-history':
       await openUrl('chrome://history/');
-      return true;
+      return typedBackgroundResult(action, true);
 
     case 'browser:open-bookmarks':
       await openUrl('chrome://bookmarks/');
-      return true;
+      return typedBackgroundResult(action, true);
 
     case 'browser:open-downloads':
       await openUrl('chrome://downloads/');
-      return true;
+      return typedBackgroundResult(action, true);
 
     case 'browser:open-extensions':
       await openUrl('chrome://extensions/');
-      return true;
+      return typedBackgroundResult(action, true);
 
     case 'browser:open-shortcuts':
       await openUrl('chrome://extensions/shortcuts');
-      return true;
+      return typedBackgroundResult(action, true);
 
     case 'browser:open-chrome-settings':
       await openUrl('chrome://settings/');
-      return true;
+      return typedBackgroundResult(action, true);
 
     case 'browser:open-web-store':
       await openUrl('https://chromewebstore.google.com/');
-      return true;
+      return typedBackgroundResult(action, true);
 
     case 'bookmarks:list':
-      return chrome.bookmarks.getTree();
+      return typedBackgroundResult(action, chrome.bookmarks.getTree());
 
     case 'history:list':
-      return chrome.history.search({
-        text: '',
-        startTime: Date.now() - 30 * 24 * 60 * 60 * 1000,
-        maxResults: 500,
-      });
+      return typedBackgroundResult(
+        action,
+        chrome.history.search({
+          text: '',
+          startTime: Date.now() - 30 * 24 * 60 * 60 * 1000,
+          maxResults: 500,
+        }),
+      );
 
     case 'sessions:restore':
-      return chrome.sessions.restore();
+      return typedBackgroundResult(action, chrome.sessions.restore());
 
     case 'groups:list':
-      return chrome.tabGroups.query({});
+      return typedBackgroundResult(action, chrome.tabGroups.query({}));
 
     case 'groups:create-current': {
       const tab = await getActiveTab();
 
       if (!tab?.id) {
-        return false;
+        return typedBackgroundResult(action, false);
       }
 
       const groupId = await chrome.tabs.group({ tabIds: [tab.id] });
       await chrome.tabGroups.update(groupId, {
-        title: String(message.title ?? '').slice(0, 80),
+        title: message.title.slice(0, 80),
         color: normalizeGroupColor(message.color),
       });
 
-      return groupId;
+      return typedBackgroundResult(action, groupId);
     }
 
     case 'groups:create': {
-      const tabId = Number(message.tabId);
+      const tabId = message.tabId;
       const groupId = await chrome.tabs.group({ tabIds: [tabId] });
       await chrome.tabGroups.update(groupId, {
-        title: String(message.title ?? '').slice(0, 80),
+        title: message.title.slice(0, 80),
         color: normalizeGroupColor(message.color),
       });
 
-      return groupId;
+      return typedBackgroundResult(action, groupId);
     }
 
     case 'groups:update': {
@@ -1193,7 +1046,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         updates.collapsed = message.collapsed;
       }
 
-      return chrome.tabGroups.update(Number(message.groupId), updates);
+      return typedBackgroundResult(action, chrome.tabGroups.update(message.groupId, updates));
     }
 
     case 'groups:ungroup-current': {
@@ -1203,7 +1056,7 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         await chrome.tabs.ungroup(tab.id);
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     case 'groups:close-current': {
@@ -1218,11 +1071,11 @@ const handleRequest = async (rawMessage: unknown, sender: chrome.runtime.Message
         }
       }
 
-      return true;
+      return typedBackgroundResult(action, true);
     }
 
     default:
-      throw new Error('Unknown command.');
+      return assertNever(action);
   }
 };
 
@@ -1258,18 +1111,12 @@ const setActiveTabZoom = async (action: string): Promise<boolean> => {
 };
 
 const listTabs = async (): Promise<Array<SplitAwareTab & { customName?: string; windowTitle?: string }>> => {
-  const [tabs, windows, stored, focusedWindow] = await Promise.all([
+  const [tabs, windows, names, focusedWindow] = await Promise.all([
     chrome.tabs.query({}),
     chrome.windows.getAll({ windowTypes: ['normal'] }),
-    chrome.storage.local.get(TAB_NAMES_KEY),
+    getTabNames(),
     chrome.windows.getLastFocused(),
   ]);
-
-  let names = tabNameSessionSafe ? normalizeTabNames(stored[TAB_NAMES_KEY]) : {};
-
-  if (Object.keys(names).some(isStaleTabNameKey)) {
-    names = await reconcileRenamedTabs();
-  }
 
   const windowTitles = new Map(
     windows.flatMap((window, index) => {
@@ -1316,68 +1163,6 @@ const activateTab = async (tabId: number, sourceTabId?: number): Promise<boolean
   await chrome.windows.update(tab.windowId, { focused: true });
   await chrome.tabs.update(tabId, { active: true });
   return true;
-};
-
-const renameTab = async (tabId: number, name: string): Promise<RenamedTab | null> => {
-  const tab = await chrome.tabs.get(tabId);
-  const customName = name.trim().slice(0, 120);
-
-  return withTabNamesMutation((names) => {
-    if (!customName) {
-      delete names[String(tabId)];
-      return null;
-    }
-
-    const saved: RenamedTab = {
-      tabId,
-      customName,
-      originalTitle: tab.title ?? tab.url ?? 'Untitled tab',
-      url: tab.url ?? '',
-      updatedAt: Date.now(),
-    };
-
-    names[String(tabId)] = saved;
-    return saved;
-  });
-};
-
-const persistReconciledTabNames = async (
-  tabs: chrome.tabs.Tab[],
-  savedNames: TabNameMap,
-  forceIdentityMatching = false,
-): Promise<TabNameMap> => {
-  const names = reconcileTabNames(savedNames, tabs, Date.now(), undefined, forceIdentityMatching);
-  await chrome.storage.local.set({ [TAB_NAMES_KEY]: names });
-  namedTabIds = getNamedTabIds(names);
-  tabNameReattachmentPending = Object.keys(names).some(isStaleTabNameKey);
-  return names;
-};
-
-const reconcileRenamedTabs = async (): Promise<TabNameMap> => {
-  return tabNameOperations.enqueue(async () => {
-    const [tabs, stored] = await Promise.all([chrome.tabs.query({}), chrome.storage.local.get(TAB_NAMES_KEY)]);
-    const savedNames = normalizeTabNames(stored[TAB_NAMES_KEY]);
-    return persistReconciledTabNames(tabs, savedNames);
-  });
-};
-
-const isStaleTabNameKey = (key: string): boolean => {
-  return key.startsWith('stale:');
-};
-
-const getNamedTabIds = (names: TabNameMap): Set<string> => {
-  return new Set(Object.keys(names).filter((key) => !isStaleTabNameKey(key)));
-};
-
-const scheduleTabNameReconciliation = (): void => {
-  if (!tabNameReattachmentPending || tabNameReconcileTimer) {
-    return;
-  }
-
-  tabNameReconcileTimer = setTimeout(() => {
-    tabNameReconcileTimer = null;
-    void reconcileRenamedTabs().catch(() => undefined);
-  }, 250);
 };
 
 const closeOverlayBeforeNavigation = async (sourceTabId?: number): Promise<void> => {

@@ -153,11 +153,12 @@ test('popup shows read-only groups before completion and enables review only aft
 });
 
 test('cancellation removes previews and old progress cannot appear in a subsequent run', async (t) => {
-  const { $, preview, analyses } = await harness(t);
+  const { $, preview, analyses, messages } = await harness(t);
   $('#organize').click();
   const oldRun = analyses[0].message.runId;
   preview();
   $('#cancel').click();
+  assert.equal(messages.find((message) => message.type === 'cancel-analysis')?.runId, oldRun);
   preview();
   assert.equal($('#results').classList.contains('hidden'), true);
   assert.equal($('#groups').children.length, 0);

@@ -24,11 +24,11 @@ export function useSavedPages(permissions: Set<string>, notify: (message: string
     const request = Promise.allSettled(
       sources.map(async (source) => {
         if (source === 'bookmarks') {
-          const tree = await sendBackground<chrome.bookmarks.BookmarkTreeNode[]>('bookmarks:list');
+          const tree = await sendBackground('bookmarks:list');
           if (version !== generation.current) return;
           setBookmarks(flattenBookmarks(tree));
         } else {
-          const entries = await sendBackground<chrome.history.HistoryItem[]>('history:list');
+          const entries = await sendBackground('history:list');
           if (version !== generation.current) return;
           setHistory(toHistoryItems(entries));
         }

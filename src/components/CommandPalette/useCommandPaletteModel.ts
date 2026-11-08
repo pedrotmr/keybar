@@ -11,13 +11,13 @@ import {
 } from 'react';
 import type { CommandItem, PaletteItem, ThemePreferences } from '@/types';
 import { useSavedPages } from './useSavedPages';
+import { usePaletteTabs } from './usePaletteTabs';
 import { getCommands } from '@/utils/commands';
 import { bulkCloseTabIds, isBulkCloseAction } from '@/utils/bulkClose';
 import { normalizeNavigationUrl, sendBackground } from '@/utils/chromeHelpers';
 import { writeClipboardText } from '@/utils/clipboard';
 import { findSearchProvider, parseProviderQuery } from '@/utils/searchProviders';
 import type { SearchProviderDefinition } from '@/utils/searchProviders';
-import { applyTheme, cacheThemePreferences, normalizeThemePreferences } from '@/themes';
 import { isTabInSplitView } from '@/utils/splitViews';
 import { TAB_GROUP_ID_NONE } from '@/utils/chromeApiConstants';
 import { initialCommandItems, toTabItems } from '@/utils/tabItems';
@@ -37,14 +37,8 @@ import {
   resultPageSize,
   tabbableSelector,
 } from './helpers';
-import type {
-  ActionDockState,
-  CommandCenterRuntimeMessage,
-  CommandPaletteMode,
-  CommandPaletteProps,
-  FlowDialog,
-  ToastMessage,
-} from './types';
+import type { ActionDockState, CommandPaletteMode, CommandPaletteProps, FlowDialog, ToastMessage } from './types';
+import { usePaletteAppearance } from './usePaletteAppearance';
 
 export const useCommandPaletteModel = ({
   initialMode,
@@ -59,18 +53,10 @@ export const useCommandPaletteModel = ({
   const [activeProvider, setActiveProvider] = useState<SearchProviderDefinition | null>(null);
   const providerOriginQuery = useRef('');
 
-  const [tabs, setTabs] = useState<ManagedTab[]>([]);
-  const [tabsReady, setTabsReady] = useState(false);
-  const [currentTabId, setCurrentTabId] = useState<number | null>(null);
-  const [currentWindowId, setCurrentWindowId] = useState<number | null>(null);
-
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [keyboardNavigationVersion, setKeyboardNavigationVersion] = useState(0);
 
-  const [permissions, setPermissions] = useState<Set<string>>(() => new Set());
-  const [groups, setGroups] = useState<chrome.tabGroups.TabGroup[]>([]);
   const [windows, setWindows] = useState<chrome.windows.Window[]>([]);
-  const [splitCapabilities, setSplitCapabilities] = useState({ create: false, unsplit: false });
 
   const [dialog, setDialog] = useState<FlowDialog | null>(null);
   const [actionDock, setActionDock] = useState<ActionDockState | null>(null);
@@ -81,8 +67,11 @@ export const useCommandPaletteModel = ({
   const [groupTargetId, setGroupTargetId] = useState('new');
   const [moveWindowId, setMoveWindowId] = useState('new');
 
-  const [preferences, setPreferences] = useState(initialTheme);
-  const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  const { preferences, viewport, updatePreferences } = usePaletteAppearance({
+    initialPreferences: initialTheme,
+    themeRoot,
+    cacheInLocalStorage: cacheThemeInLocalStorage,
+  });
 
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [dialogError, setDialogError] = useState('');
@@ -99,8 +88,6 @@ export const useCommandPaletteModel = ({
   const closeConfirmationCancelRef = useRef<HTMLButtonElement>(null);
   const actionDockReturnFocus = useRef<HTMLElement | null>(null);
 
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tabRefreshVersion = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastDismissRef = useRef<HTMLButtonElement>(null);
   const handoffPending = useRef(false);
@@ -141,150 +128,22 @@ export const useCommandPaletteModel = ({
     [restorePaletteFocus],
   );
 
+  const {
+    tabs,
+    tabsReady,
+    currentTabId,
+    currentWindowId,
+    permissions,
+    setPermissions,
+    groups,
+    setGroups,
+    splitCapabilities,
+    refreshTabs,
+  } = usePaletteTabs({ surface, notify });
   const { bookmarks, history, localDataLoading, localDataLoaded, loadLocalData } = useSavedPages(permissions, notify);
-
-  const systemAppearance = useMemo(() => window.matchMedia('(prefers-color-scheme: dark)'), []);
-  const [systemDark, setSystemDark] = useState(systemAppearance.matches);
 
   useLayoutEffect(() => {
     inputRef.current?.focus({ preventScroll: true });
-  }, []);
-
-  useEffect(() => {
-    const updateSystemAppearance = () => setSystemDark(systemAppearance.matches);
-    systemAppearance.addEventListener('change', updateSystemAppearance);
-    return () => systemAppearance.removeEventListener('change', updateSystemAppearance);
-  }, [systemAppearance]);
-
-  useEffect(() => {
-    const updateViewport = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener('resize', updateViewport);
-    return () => window.removeEventListener('resize', updateViewport);
-  }, []);
-
-  useEffect(() => {
-    applyTheme(preferences, systemDark, themeRoot);
-
-    if (cacheThemeInLocalStorage) {
-      cacheThemePreferences(preferences);
-    }
-  }, [preferences, systemDark, themeRoot, cacheThemeInLocalStorage]);
-
-  useEffect(() => {
-    const onPreferencesChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-      if (area === 'local' && changes.themePreferences) {
-        setPreferences(normalizeThemePreferences(changes.themePreferences.newValue));
-      }
-    };
-    chrome.storage.onChanged.addListener(onPreferencesChanged);
-    return () => chrome.storage.onChanged.removeListener(onPreferencesChanged);
-  }, []);
-
-  const refreshTabs = async () => {
-    const requestVersion = ++tabRefreshVersion.current;
-    const started = performance.now();
-    const snapshot = await Promise.all([
-      sendBackground<ManagedTab[]>('tabs:list'),
-      sendBackground<chrome.tabs.Tab | null>('tabs:current'),
-      sendBackground<boolean>('permissions:contains', { permissions: ['tabGroups'] }).catch(() => false),
-      sendBackground<{ create: boolean; unsplit: boolean }>('browser:split-capabilities').catch(() => ({
-        create: false,
-        unsplit: false,
-      })),
-    ]).catch((error: unknown) => {
-      if (requestVersion === tabRefreshVersion.current) throw error;
-      return null;
-    });
-    if (!snapshot) return;
-    const [nextTabs, currentTab, groupsAllowed, splitSupport] = snapshot;
-
-    const currentId = currentTab?.id ?? null;
-    let nextGroups: chrome.tabGroups.TabGroup[] = [];
-
-    if (groupsAllowed) {
-      nextGroups = await sendBackground<chrome.tabGroups.TabGroup[]>('groups:list').catch(() => []);
-    }
-
-    if (requestVersion !== tabRefreshVersion.current) {
-      return;
-    }
-
-    const groupById = new Map(nextGroups.map((group) => [group.id, group]));
-    setTabs(
-      nextTabs.map((tab) => {
-        const group = groupById.get(tab.groupId);
-        return {
-          ...tab,
-          groupTitle: group?.title,
-          groupColor: group?.color,
-        };
-      }),
-    );
-
-    setCurrentTabId(currentId);
-    setCurrentWindowId(currentTab?.windowId ?? null);
-    setGroups(nextGroups);
-    setSplitCapabilities(splitSupport);
-    setTabsReady(true);
-    recordTiming('tab-list', performance.now() - started);
-  };
-
-  useEffect(() => {
-    performance.clearMarks('cc:ui-mounted');
-    performance.mark('cc:ui-mounted');
-
-    const requestPermissions = async () => {
-      try {
-        const granted =
-          surface === 'popup'
-            ? await chrome.permissions.getAll()
-            : await sendBackground<chrome.permissions.Permissions>('permissions:get-all');
-
-        setPermissions(new Set(granted.permissions ?? []));
-      } catch {
-        setPermissions(new Set());
-      }
-    };
-
-    const scheduleRefresh = () => {
-      if (refreshTimer.current) {
-        clearTimeout(refreshTimer.current);
-      }
-
-      refreshTimer.current = setTimeout(() => {
-        void refreshTabs().catch(() => notify('Could not update open tabs.'));
-      }, 32);
-    };
-
-    void refreshTabs().catch(() => {
-      setTabsReady(true);
-      notify('Could not load open tabs.');
-    });
-    void requestPermissions();
-
-    const handleRuntimeMessage = (message: CommandCenterRuntimeMessage) => {
-      if (message.action === 'ui:tabs-changed') {
-        scheduleRefresh();
-      }
-
-      if (message.action === 'ui:permissions-changed') {
-        void sendBackground<chrome.permissions.Permissions>('permissions:get-all')
-          .then((granted) => setPermissions(new Set(granted.permissions ?? [])))
-          .catch(() => undefined);
-      }
-    };
-
-    chrome.runtime.onMessage.addListener(handleRuntimeMessage);
-
-    return () => {
-      tabRefreshVersion.current++;
-      if (refreshTimer.current) {
-        clearTimeout(refreshTimer.current);
-      }
-
-      chrome.runtime.onMessage.removeListener(handleRuntimeMessage);
-    };
-    // Popup lifetime is short; refreshTabs is intentionally captured once for these browser event listeners.
   }, []);
 
   useEffect(() => {
@@ -626,7 +485,7 @@ export const useCommandPaletteModel = ({
 
     try {
       if (surface === 'overlay') {
-        await sendBackground<boolean>('permissions:open-request', { permissions: missing });
+        await sendBackground('permissions:open-request', { permissions: missing });
         notify('Approve access in the Keybar window, then choose this command again.', 'success');
         return false;
       }
@@ -681,8 +540,7 @@ export const useCommandPaletteModel = ({
         return;
       }
 
-      const noun = count === 1 ? 'tab' : 'tabs';
-      const title = getConfirmCloseTitle(command.id, count, noun);
+      const title = getConfirmCloseTitle(command.action, count);
 
       dismissToast();
       setDialogError('');
@@ -712,7 +570,7 @@ export const useCommandPaletteModel = ({
       dismissToast();
       setDialogError('');
 
-      const currentGroups = await sendBackground<chrome.tabGroups.TabGroup[]>('groups:list').catch(() => []);
+      const currentGroups = await sendBackground('groups:list').catch(() => []);
       setGroups(currentGroups);
       setGroupTargetId('new');
       setGroupName('');
@@ -722,9 +580,7 @@ export const useCommandPaletteModel = ({
     }
 
     if (command.flow === 'group-active' && activeTab?.id !== undefined) {
-      const currentGroups = permissions.has('tabGroups')
-        ? groups
-        : await sendBackground<chrome.tabGroups.TabGroup[]>('groups:list').catch(() => []);
+      const currentGroups = permissions.has('tabGroups') ? groups : await sendBackground('groups:list').catch(() => []);
 
       const group = currentGroups.find((candidate) => candidate.id === activeTab.groupId) ?? activeGroup;
       dismissToast();
@@ -743,7 +599,7 @@ export const useCommandPaletteModel = ({
     }
 
     try {
-      if (command.id === 'toggle-tab-group' && activeGroup) {
+      if (command.flow === 'toggle-group' && activeGroup) {
         await sendBackground('groups:update', { groupId: activeGroup.id, collapsed: !activeGroup.collapsed });
         await refreshTabs();
         notify(activeGroup.collapsed ? 'Tab group expanded.' : 'Tab group collapsed.', 'success');
@@ -751,7 +607,7 @@ export const useCommandPaletteModel = ({
       }
 
       if (command.action === 'tabs:copy-url' || command.action === 'tabs:copy-title') {
-        const value = await sendBackground<string>(command.action);
+        const value = await sendBackground(command.action);
 
         if (!value) {
           throw new Error('There is nothing to copy from the current tab.');
@@ -760,6 +616,10 @@ export const useCommandPaletteModel = ({
         await writeClipboardText(value);
         notify(command.action === 'tabs:copy-url' ? 'URL copied.' : 'Tab title copied.', 'success');
         return;
+      }
+
+      if (!command.action) {
+        throw new Error('This command does not have a browser action.');
       }
 
       const started = performance.now();
@@ -991,7 +851,7 @@ export const useCommandPaletteModel = ({
     setDialogError('');
 
     try {
-      const availableWindows = await sendBackground<chrome.windows.Window[]>('windows:list');
+      const availableWindows = await sendBackground('windows:list');
       setWindows(availableWindows.filter((item) => item.id !== tab.windowId && item.incognito === tab.incognito));
       setMoveWindowId('new');
       setDialog({ kind: 'move', tabId: tab.id });
@@ -1008,7 +868,7 @@ export const useCommandPaletteModel = ({
     dismissToast();
     setDialogError('');
 
-    const currentGroups = await sendBackground<chrome.tabGroups.TabGroup[]>('groups:list').catch(() => []);
+    const currentGroups = await sendBackground('groups:list').catch(() => []);
     setGroups(currentGroups);
     setGroupTargetId('new');
     setGroupName('');
@@ -1137,7 +997,7 @@ export const useCommandPaletteModel = ({
     }
 
     try {
-      const value = await sendBackground<string>(`tabs:copy-${field}`, { tabId: tab.id });
+      const value = await sendBackground(`tabs:copy-${field}`, { tabId: tab.id });
 
       if (!value) {
         throw new Error(`This tab has no ${field} to copy.`);
@@ -1333,14 +1193,7 @@ export const useCommandPaletteModel = ({
   };
 
   const handleThemeChange = (next: ThemePreferences): void => {
-    const normalized = normalizeThemePreferences(next);
-    setPreferences(normalized);
-
-    if (cacheThemeInLocalStorage) {
-      cacheThemePreferences(normalized);
-    }
-
-    applyTheme(normalized, systemDark, themeRoot);
+    const normalized = updatePreferences(next);
     void chrome.storage.local.set({ themePreferences: normalized }).catch(() => {
       notify('Could not save your appearance preference.');
     });

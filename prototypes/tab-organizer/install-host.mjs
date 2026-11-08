@@ -24,82 +24,66 @@ const runtimeConfigPath = resolve(appSupportDirectory, 'codex-runtime.json');
 const claudeLoginPath = resolve(appSupportDirectory, 'claude-login.command');
 const shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 
-function resolveCodexPath() {
-  let codexPath;
+function resolveInstalledCliPath(command, { required = false } = {}) {
+  const cliName = command === 'codex' ? 'Codex' : 'Claude Code';
+  const unavailable = (message) => {
+    if (required) throw new Error(message);
+    return undefined;
+  };
+  let cliPath;
   try {
-    codexPath = execFileSync('/usr/bin/which', ['codex'], {
+    cliPath = execFileSync('/usr/bin/which', [command], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
   } catch {
-    throw new Error('Install the Codex CLI and make `codex` available in PATH before registering this prototype.');
+    return unavailable(
+      `Install the ${cliName} CLI and make \`${command}\` available in PATH before registering this prototype.`,
+    );
   }
-  if (!codexPath.startsWith('/')) throw new Error('The Codex CLI path could not be resolved.');
+  if (!cliPath.startsWith('/')) {
+    return unavailable(`The ${cliName} CLI path could not be resolved.`);
+  }
 
-  if (codexPath.includes('/.asdf/shims/')) {
+  if (cliPath.includes('/.asdf/shims/')) {
     try {
       const asdfPath = execFileSync('/usr/bin/which', ['asdf'], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
-      if (!asdfPath.startsWith('/')) throw new Error('asdf could not be resolved.');
-      const installed = execFileSync(asdfPath, ['which', 'codex'], {
+      if (!asdfPath.startsWith('/')) {
+        return unavailable(
+          `Could not resolve ${cliName} through asdf. Run \`asdf which ${command}\` successfully, then register again.`,
+        );
+      }
+      const installed = execFileSync(asdfPath, ['which', command], {
         encoding: 'utf8',
         env: process.env,
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
-      if (installed.startsWith('/') && existsSync(installed)) codexPath = installed;
+      if (installed.startsWith('/') && existsSync(installed)) cliPath = installed;
+      else {
+        return unavailable(
+          `Could not resolve ${cliName} through asdf. Run \`asdf which ${command}\` successfully, then register again.`,
+        );
+      }
     } catch {
-      throw new Error(
-        'Could not resolve Codex through asdf. Run `asdf which codex` successfully, then register again.',
+      return unavailable(
+        `Could not resolve ${cliName} through asdf. Run \`asdf which ${command}\` successfully, then register again.`,
       );
     }
   }
-  if (!existsSync(codexPath)) throw new Error('The Codex CLI path does not exist. Reinstall Codex and try again.');
-  return codexPath;
-}
-
-function resolveClaudePath() {
-  let claudePath;
-  try {
-    claudePath = execFileSync('/usr/bin/which', ['claude'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {
-    return undefined;
-  }
-  if (!claudePath.startsWith('/')) return undefined;
-
-  if (claudePath.includes('/.asdf/shims/')) {
-    try {
-      const asdfPath = execFileSync('/usr/bin/which', ['asdf'], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }).trim();
-      if (!asdfPath.startsWith('/')) return undefined;
-      const installed = execFileSync(asdfPath, ['which', 'claude'], {
-        encoding: 'utf8',
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }).trim();
-      if (installed.startsWith('/') && existsSync(installed)) claudePath = installed;
-      else return undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  return existsSync(claudePath) ? claudePath : undefined;
+  return existsSync(cliPath) ? cliPath : unavailable(`The ${cliName} CLI path does not exist.`);
 }
 
 let codexPath;
 try {
-  codexPath = resolveCodexPath();
+  codexPath = resolveInstalledCliPath('codex', { required: true });
 } catch (error) {
   process.stderr.write(`${error.message}\n`);
   process.exit(2);
 }
-const claudePath = resolveClaudePath();
+const claudePath = resolveInstalledCliPath('claude');
 
 const manifest = {
   name: 'com.keybar.tab_organizer',

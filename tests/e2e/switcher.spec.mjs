@@ -1,4 +1,7 @@
 import { test, expect } from './fixtures.mjs';
+import { createRequire } from 'node:module';
+
+const { contentSurfaces } = createRequire(import.meta.url)('../../extension-artifacts.json');
 
 for (const releaseBeforeReady of [false, true]) {
   test(`Tab Switcher activates on modifier release ${releaseBeforeReady ? 'immediately after open request' : 'after rendering'}`, async ({
@@ -27,8 +30,8 @@ for (const releaseBeforeReady of [false, true]) {
       async () => (await chrome.tabs.query({})).find((tab) => tab.url === 'https://switch.test/source').id,
     );
     await worker.evaluate(
-      async ({ sourceId }) => {
-        await chrome.scripting.executeScript({ target: { tabId: sourceId }, files: ['content-tabs.js'] });
+      async ({ sourceId, surfaceFile }) => {
+        await chrome.scripting.executeScript({ target: { tabId: sourceId }, files: [surfaceFile] });
         await chrome.tabs.sendMessage(sourceId, {
           action: 'overlay:open',
           mode: 'tabs',
@@ -36,7 +39,7 @@ for (const releaseBeforeReady of [false, true]) {
           openedAt: Date.now(),
         });
       },
-      { sourceId },
+      { sourceId, surfaceFile: contentSurfaces.tabs.file },
     );
     if (!releaseBeforeReady) {
       await expect

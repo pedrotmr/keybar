@@ -1,7 +1,6 @@
 {
   "manifest_version": 3,
   "name": "Keybar",
-  "version": "3.0.0",
   "description": "A fast, keyboard-first command bar for Chrome.",
   "icons": {
     "16": "icons/keybar-16.png",
@@ -39,24 +38,5 @@
       },
       "description": "Open the tab switcher"
     }
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "assets/fonts/open-sans/OpenSans-Latin.woff2",
-        "assets/fonts/open-sans/OpenSans-LatinExt.woff2",
-        "assets/fonts/outfit/Outfit-Latin.woff2",
-        "assets/fonts/outfit/Outfit-LatinExt.woff2",
-        "assets/fonts/nunito-sans/NunitoSans-Latin.woff2",
-        "assets/fonts/nunito-sans/NunitoSans-LatinExt.woff2",
-        "assets/fonts/sora/Sora-Latin.woff2",
-        "assets/fonts/sora/Sora-LatinExt.woff2",
-        "assets/fonts/ibm-plex-mono/IBMPlexMono-400-Latin.woff2",
-        "assets/fonts/ibm-plex-mono/IBMPlexMono-500-Latin.woff2",
-        "assets/fonts/ibm-plex-mono/IBMPlexMono-600-Latin.woff2",
-        "assets/fonts/ibm-plex-mono/IBMPlexMono-700-Latin.woff2"
-      ],
-      "matches": ["http://*/*", "https://*/*"]
-    }
-  ]
+  }
 }

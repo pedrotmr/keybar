@@ -70,16 +70,6 @@ export class TabPreviewCache {
     });
   }
 
-  clear(): Promise<void> {
-    this.generation++;
-    return this.operations.enqueue(async () => {
-      const stored = await this.port.get(this.idsKey);
-      const ids = this.readIds(stored[this.idsKey]);
-
-      await this.port.remove([this.idsKey, ...ids.map((id) => `${this.recordPrefix}${id}`)]);
-    });
-  }
-
   private readIds(value: unknown): number[] {
     return Array.isArray(value)
       ? value.filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id >= 0)

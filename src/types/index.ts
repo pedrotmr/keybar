@@ -1,3 +1,5 @@
+import type { CommandAction } from '@/utils/chromeMessages';
+
 export type PaletteMode = 'commands' | 'tabs' | 'settings';
 export type ItemType = 'command' | 'tab' | 'bookmark' | 'history' | 'search' | 'url';
 export type SplitAwareTab = chrome.tabs.Tab & { splitViewId?: number };
@@ -11,15 +13,34 @@ export interface BaseItem {
   keywords?: string[];
 }
 
-export interface CommandItem extends BaseItem {
+interface CommandItemBase extends BaseItem {
   type: 'command';
   description: string;
   category: string;
   permission?: chrome.permissions.Permissions;
-  action: string;
-  flow?:
-    'rename-active' | 'move-active' | 'group-active' | 'assign-group' | 'confirm-close' | 'settings' | 'saved-search';
 }
+
+export type CommandFlow =
+  | 'rename-active'
+  | 'move-active'
+  | 'group-active'
+  | 'assign-group'
+  | 'confirm-close'
+  | 'toggle-group'
+  | 'settings'
+  | 'saved-search';
+
+export type ActionCommandItem = CommandItemBase & {
+  action: CommandAction;
+  flow?: 'confirm-close';
+};
+
+export type FlowCommandItem = CommandItemBase & {
+  action: '';
+  flow: Exclude<CommandFlow, 'confirm-close'>;
+};
+
+export type CommandItem = ActionCommandItem | FlowCommandItem;
 
 interface TabIdentity {
   tabId: number;

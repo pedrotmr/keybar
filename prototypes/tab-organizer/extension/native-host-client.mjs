@@ -1,3 +1,6 @@
+import { ANALYSIS_REQUEST_TIMEOUT_MS } from './shared/timeouts.mjs';
+import { NativeHostAction, NativeHostEvent } from './shared/protocol.mjs';
+
 export function createNativeHostClient({ connect, lastError, idleMs = 60_000 }) {
   let port;
   let idleTimer;
@@ -37,7 +40,7 @@ export function createNativeHostClient({ connect, lastError, idleMs = 60_000 }) 
         close(new Error('The local AI host returned an incompatible reply. Reload the prototype extension.'));
         return;
       }
-      if (reply.event === 'progress') {
+      if (reply.event === NativeHostEvent.progress) {
         const request = pending.get(reply.id);
         if (request && !request.signal?.aborted) {
           try {
@@ -64,7 +67,7 @@ export function createNativeHostClient({ connect, lastError, idleMs = 60_000 }) 
     return opened;
   }
 
-  function request(payload, { signal, onProgress, timeoutMs = 120_000 } = {}) {
+  function request(payload, { signal, onProgress, timeoutMs = ANALYSIS_REQUEST_TIMEOUT_MS } = {}) {
     if (signal?.aborted) return Promise.reject(new Error('Analysis cancelled. No tabs were changed.'));
     clearTimeout(idleTimer);
     let activePort;
@@ -77,7 +80,7 @@ export function createNativeHostClient({ connect, lastError, idleMs = 60_000 }) 
     return new Promise((resolve, reject) => {
       const abort = () => {
         try {
-          activePort.postMessage({ action: 'cancel-analysis', targetId: id });
+          activePort.postMessage({ action: NativeHostAction.cancelAnalysis, targetId: id });
         } catch {
           close(new Error('The local AI host could not receive the cancellation. Try again.'));
         }

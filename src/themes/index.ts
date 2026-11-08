@@ -176,7 +176,6 @@ const resolveAccent = (source: ThemeSourceColors, isDark: boolean): ResolvedAcce
     accentSoft = mixColors(input, accent, accentBlend);
   }
 
-  // Recompute the final surface after the loop and verify the displayed pair.
   accentSoft = mixColors(input, accent, accentBlend);
 
   if (contrast(accent, accentSoft) < 4.5) {

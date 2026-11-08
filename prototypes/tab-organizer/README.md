@@ -68,7 +68,7 @@ security delete-generic-password -a anthropic-console-api-key -s com.keybar.tab-
 
 ## Evaluation notes
 
-Run `npm run test:tab-organizer` from the repository root for the account-free prototype tests included in CI. After completing DevKit setup, `node --test prototypes/tab-organizer/tests/non-reasoning.test.mjs` additionally checks the built SDK's reasoning request and proposal-member safeguards. These local tests do not replace the signed-in synthetic evaluation in #36.
+Run `npm run test:tab-organizer` from the repository root for the account-free prototype tests included in CI. After completing DevKit setup, run `npm run test:tab-organizer:non-reasoning` to additionally check the built SDK's reasoning request and proposal-member safeguards. These local tests do not replace the signed-in synthetic evaluation in #36.
 
 Performance changes are being evaluated one at a time:
 

@@ -1,7 +1,10 @@
 import { test, expect, chromium } from '@playwright/test';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+
+const { popupHtml } = createRequire(import.meta.url)('../../extension-artifacts.json');
 
 test('names and preferences survive a complete browser restart and restored tab IDs', async () => {
   const profile = await mkdtemp(path.join(os.tmpdir(), 'keybar-session-'));
@@ -22,7 +25,7 @@ test('names and preferences survive a complete browser restart and restored tab 
       (await chrome.tabs.query({})).find((tab) => tab.title === 'Restored unique tab'),
     );
     const menu = await context.newPage();
-    await menu.goto(`chrome-extension://${new URL(worker.url()).host}/src/popup/index.html`);
+    await menu.goto(`chrome-extension://${new URL(worker.url()).host}/${popupHtml}`);
     const result = await menu.evaluate(
       (tabId) => chrome.runtime.sendMessage({ action: 'tabs:rename', tabId, name: 'Persistent Quasar' }),
       original.id,
@@ -45,7 +48,7 @@ test('names and preferences survive a complete browser restart and restored tab 
       )
       .toBe(true);
     const nextMenu = await context.newPage();
-    await nextMenu.goto(`chrome-extension://${new URL(worker.url()).host}/src/popup/index.html?mode=commands`);
+    await nextMenu.goto(`chrome-extension://${new URL(worker.url()).host}/${popupHtml}?mode=commands`);
     await nextMenu.getByRole('combobox').fill('Persistent Quasar');
     await expect(nextMenu.getByRole('option').first()).toHaveAttribute('id', /^command-center-option-tab-/);
     await expect(nextMenu.getByRole('option').first()).toContainText('Persistent Quasar');

@@ -1,7 +1,10 @@
 import { test as base, expect } from '@playwright/test';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+
+const { popupHtml } = createRequire(import.meta.url)('../../extension-artifacts.json');
 
 export const test = base.extend({
   extension: async ({ playwright }, use) => {
@@ -21,7 +24,7 @@ export const test = base.extend({
       context.on('weberror', (event) => errors.push(event.error().message));
       const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
       const id = new URL(worker.url()).host;
-      const url = `chrome-extension://${id}/src/popup/index.html?mode=commands`;
+      const url = `chrome-extension://${id}/${popupHtml}?mode=commands`;
       await use({ context, worker, id, url, profile });
       expect(errors).toEqual([]);
     } finally {
