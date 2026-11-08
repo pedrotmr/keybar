@@ -15,7 +15,9 @@ export const attachOverlayListeners = (controller: SurfaceController, mountPoint
       return false;
     }
 
-    if (!message || typeof message !== 'object') return false;
+    if (!message || typeof message !== 'object') {
+      return false;
+    }
 
     if (message.action === 'ui:tabs-cycle') {
       const cycles = Math.max(1, Math.min(64, Math.floor(Number(message.cycles) || 1)));
@@ -85,7 +87,10 @@ export const attachOverlayListeners = (controller: SurfaceController, mountPoint
   };
 
   const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-    if (!event.isTrusted) return;
+    if (!event.isTrusted) {
+      return;
+    }
+
     if (
       event.isComposing ||
       event.keyCode === 229 ||

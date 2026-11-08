@@ -5,10 +5,17 @@ export type BulkCloseAction = 'tabs:close-others' | 'tabs:close-right' | 'groups
 export const isBulkCloseAction = (action: unknown): action is BulkCloseAction =>
   action === 'tabs:close-others' || action === 'tabs:close-right' || action === 'groups:close-current';
 
-export function bulkCloseTabIds(tabs: chrome.tabs.Tab[], anchor: chrome.tabs.Tab, action: BulkCloseAction): number[] {
+export const bulkCloseTabIds = (
+  tabs: chrome.tabs.Tab[],
+  anchor: chrome.tabs.Tab,
+  action: BulkCloseAction,
+): number[] => {
   return tabs
     .filter((tab) => {
-      if (tab.windowId !== anchor.windowId) return false;
+      if (tab.windowId !== anchor.windowId) {
+        return false;
+      }
+
       switch (action) {
         case 'tabs:close-others':
           return tab.id !== anchor.id;
@@ -19,4 +26,4 @@ export function bulkCloseTabIds(tabs: chrome.tabs.Tab[], anchor: chrome.tabs.Tab
       }
     })
     .flatMap((tab) => (tab.id === undefined ? [] : [tab.id]));
-}
+};

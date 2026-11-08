@@ -32,7 +32,10 @@ export const usePaletteAppearance = ({
 
   useEffect(() => {
     applyTheme(preferences, systemDark, themeRoot);
-    if (cacheInLocalStorage) cacheThemePreferences(preferences);
+
+    if (cacheInLocalStorage) {
+      cacheThemePreferences(preferences);
+    }
   }, [preferences, systemDark, themeRoot, cacheInLocalStorage]);
 
   useEffect(() => {
@@ -41,6 +44,7 @@ export const usePaletteAppearance = ({
         setPreferences(normalizeThemePreferences(changes.themePreferences.newValue));
       }
     };
+
     chrome.storage.onChanged.addListener(onPreferencesChanged);
     return () => chrome.storage.onChanged.removeListener(onPreferencesChanged);
   }, []);

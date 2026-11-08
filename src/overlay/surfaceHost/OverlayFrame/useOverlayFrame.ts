@@ -89,9 +89,11 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
         !controller.focusTarget.isConnected
       ) {
         let focused = document.activeElement;
+
         while (focused?.shadowRoot?.activeElement) {
           focused = focused.shadowRoot.activeElement;
         }
+
         controller.focusTarget = focused;
       }
 
