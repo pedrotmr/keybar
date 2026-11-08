@@ -99,6 +99,7 @@ export const createHost = (hostId: string, styles: string): CreatedOverlayHost =
 
     event.stopPropagation();
   };
+
   shadowRoot.addEventListener('keypress', stopUnmodifiedPrintableKeyboardPropagation);
   shadowRoot.addEventListener('keyup', stopUnmodifiedPrintableKeyboardPropagation);
 

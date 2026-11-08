@@ -34,6 +34,7 @@ function command(
   keywords: string[],
   options: FlowCommandOptions,
 ): FlowCommandItem;
+
 function command(
   id: string,
   title: string,

@@ -14,9 +14,11 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
   const [tabsReady, setTabsReady] = useState(false);
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
   const [currentWindowId, setCurrentWindowId] = useState<number | null>(null);
+
   const [permissions, setPermissions] = useState<Set<string>>(() => new Set());
   const [groups, setGroups] = useState<chrome.tabGroups.TabGroup[]>([]);
   const [splitCapabilities, setSplitCapabilities] = useState({ create: false, unsplit: false });
+
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tabRefreshVersion = useRef(0);
   const notifyRef = useRef(notify);
@@ -31,14 +33,23 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
       sendBackground('permissions:contains', { permissions: ['tabGroups'] }).catch(() => false),
       sendBackground('browser:split-capabilities').catch(() => ({ create: false, unsplit: false })),
     ]).catch((error: unknown) => {
-      if (requestVersion === tabRefreshVersion.current) throw error;
+      if (requestVersion === tabRefreshVersion.current) {
+        throw error;
+      }
+
       return null;
     });
-    if (!snapshot) return;
+
+    if (!snapshot) {
+      return;
+    }
 
     const [nextTabs, currentTab, groupsAllowed, splitSupport] = snapshot;
     const nextGroups = groupsAllowed ? await sendBackground('groups:list').catch(() => []) : [];
-    if (requestVersion !== tabRefreshVersion.current) return;
+
+    if (requestVersion !== tabRefreshVersion.current) {
+      return;
+    }
 
     const groupById = new Map(nextGroups.map((group) => [group.id, group]));
     setTabs(
@@ -47,10 +58,12 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
         return { ...tab, groupTitle: group?.title, groupColor: group?.color };
       }),
     );
+
     setCurrentTabId(currentTab?.id ?? null);
     setCurrentWindowId(currentTab?.windowId ?? null);
     setGroups(nextGroups);
     setSplitCapabilities(splitSupport);
+
     setTabsReady(true);
     recordTiming('tab-list', performance.now() - started);
   }, []);
@@ -63,13 +76,18 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
       try {
         const granted =
           surface === 'popup' ? await chrome.permissions.getAll() : await sendBackground('permissions:get-all');
+
         setPermissions(new Set(granted.permissions ?? []));
       } catch {
         setPermissions(new Set());
       }
     };
+
     const scheduleRefresh = () => {
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      if (refreshTimer.current) {
+        clearTimeout(refreshTimer.current);
+      }
+
       refreshTimer.current = setTimeout(() => {
         void refreshTabs().catch(() => notifyRef.current('Could not update open tabs.'));
       }, 32);
@@ -82,14 +100,24 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
     void loadPermissions();
 
     const handleRuntimeMessage = (message: CommandCenterRuntimeMessage) => {
-      if (message.action === 'ui:tabs-changed') scheduleRefresh();
-      if (message.action === 'ui:permissions-changed') void loadPermissions();
+      if (message.action === 'ui:tabs-changed') {
+        scheduleRefresh();
+      }
+
+      if (message.action === 'ui:permissions-changed') {
+        void loadPermissions();
+      }
     };
+
     chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
     return () => {
       tabRefreshVersion.current++;
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+
+      if (refreshTimer.current) {
+        clearTimeout(refreshTimer.current);
+      }
+
       chrome.runtime.onMessage.removeListener(handleRuntimeMessage);
     };
   }, [refreshTabs, surface]);

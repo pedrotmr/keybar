@@ -131,7 +131,9 @@ export const useTabSwitcherModel = ({
     event.stopPropagation();
     event.nativeEvent.stopImmediatePropagation?.();
 
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      return;
+    }
 
     switch (event.key) {
       case 'Escape':

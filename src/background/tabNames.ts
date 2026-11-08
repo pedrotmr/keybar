@@ -35,7 +35,9 @@ const reconcileRenamedTabs = async (): Promise<TabNameMap> =>
   });
 
 const scheduleReconciliation = (): void => {
-  if (!reattachmentPending || reconcileTimer) return;
+  if (!reattachmentPending || reconcileTimer) {
+    return;
+  }
 
   reconcileTimer = setTimeout(() => {
     reconcileTimer = null;
@@ -54,14 +56,24 @@ const initializeSession = async (): Promise<void> => {
   reattachmentPending = Object.keys(names).some(isStaleKey);
 
   if (session[sessionKey]) {
-    if (reattachmentPending) scheduleReconciliation();
+    if (reattachmentPending) {
+      scheduleReconciliation();
+    }
+
     return;
   }
 
   await operations.drain();
-  if (Object.keys(names).length) await persistReconciledTabNames(await chrome.tabs.query({}), names, true);
+
+  if (Object.keys(names).length) {
+    await persistReconciledTabNames(await chrome.tabs.query({}), names, true);
+  }
+
   await chrome.storage.session.set({ [sessionKey]: true });
-  if (reattachmentPending) scheduleReconciliation();
+
+  if (reattachmentPending) {
+    scheduleReconciliation();
+  }
 };
 
 export const tabNameSessionInitialization = initializeSession().catch(() => {
@@ -73,7 +85,10 @@ const withNamesMutation = <T>(mutate: (names: TabNameMap) => Promise<T> | T): Pr
     const stored = await chrome.storage.local.get(localKey);
     const names = normalizeTabNames(stored[localKey]);
     const result = await mutate(names);
-    if (result === false) return result;
+
+    if (result === false) {
+      return result;
+    }
 
     await chrome.storage.local.set({ [localKey]: names });
     namedTabIds = getNamedTabIds(names);
@@ -97,6 +112,7 @@ export const renameTab = async (tabId: number, name: string): Promise<RenamedTab
       url: tab.url ?? '',
       updatedAt: Date.now(),
     };
+
     names[String(tabId)] = saved;
     return saved;
   });
@@ -116,7 +132,10 @@ export const getTabNames = async (): Promise<TabNameMap> => {
 export const handleClosedTabName = async (tabId: number): Promise<void> => {
   await tabNameSessionInitialization;
   const updated = await withNamesMutation(async (names) => {
-    if (!names[String(tabId)]) return false;
+    if (!names[String(tabId)]) {
+      return false;
+    }
+
     const currentTabs = await chrome.tabs.query({});
     return markTabNameClosed(names, tabId, Date.now(), currentTabs);
   });
@@ -135,21 +154,40 @@ export const handleUpdatedTabName = async (
   if (reattachmentPending && (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title)) {
     scheduleReconciliation();
   }
-  if (!changeInfo.url && !changeInfo.title) return;
+
+  if (!changeInfo.url && !changeInfo.title) {
+    return;
+  }
 
   await tabNameSessionInitialization;
-  if (!namedTabIds.has(String(tabId))) return;
+
+  if (!namedTabIds.has(String(tabId))) {
+    return;
+  }
 
   const updated = await withNamesMutation((names) => {
     const saved = names[String(tabId)];
-    if (!saved) return false;
-    if (typeof tab.url === 'string') saved.url = tab.url;
-    if (typeof tab.title === 'string') saved.originalTitle = tab.title;
+
+    if (!saved) {
+      return false;
+    }
+
+    if (typeof tab.url === 'string') {
+      saved.url = tab.url;
+    }
+
+    if (typeof tab.title === 'string') {
+      saved.originalTitle = tab.title;
+    }
+
     saved.closedAt = undefined;
     saved.updatedAt = Date.now();
     return true;
   });
-  if (updated) scheduleReconciliation();
+
+  if (updated) {
+    scheduleReconciliation();
+  }
 };
 
 export const handleCreatedTabName = async (): Promise<void> => {

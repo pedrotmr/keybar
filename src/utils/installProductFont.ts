@@ -1,8 +1,17 @@
 import type { CommandBarFontFamily } from '@/types';
 import artifacts from '../../extension-artifacts.json';
 
-type FontFaceMetadata = { path: string; weight: string; subset: 'latin' | 'latinExt' };
-type FontFamilyMetadata = { cssFamily: string; faces: FontFaceMetadata[] };
+interface FontFaceMetadata {
+  path: string;
+  weight: string;
+  subset: 'latin' | 'latinExt';
+}
+
+interface FontFamilyMetadata {
+  cssFamily: string;
+  faces: FontFaceMetadata[];
+}
+
 const fontFamilies = artifacts.fonts.families as Record<CommandBarFontFamily, FontFamilyMetadata>;
 const unicodeRanges = {
   latin:
@@ -10,9 +19,11 @@ const unicodeRanges = {
   latinExt:
     'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF',
 };
+
 const productFontFamilies = Object.fromEntries(
   Object.entries(fontFamilies).map(([family, metadata]) => [family, metadata.cssFamily]),
 ) as Record<CommandBarFontFamily, string>;
+
 const fontFaces = Object.values(fontFamilies).flatMap(({ cssFamily, faces }) =>
   faces.map(({ path, weight, subset }) => ({
     family: cssFamily,
@@ -21,10 +32,15 @@ const fontFaces = Object.values(fontFamilies).flatMap(({ cssFamily, faces }) =>
     unicodeRange: unicodeRanges[subset],
   })),
 );
+
 const preloadPaths = Object.fromEntries(
   Object.entries(fontFamilies).map(([family, metadata]) => {
     const firstFace = metadata.faces[0];
-    if (!firstFace) throw new Error(`No font face is configured for ${family}.`);
+
+    if (!firstFace) {
+      throw new Error(`No font face is configured for ${family}.`);
+    }
+
     return [family, firstFace.path];
   }),
 ) as Record<CommandBarFontFamily, string>;

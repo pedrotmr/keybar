@@ -140,6 +140,7 @@ export const useCommandPaletteModel = ({
     splitCapabilities,
     refreshTabs,
   } = usePaletteTabs({ surface, notify });
+
   const { bookmarks, history, localDataLoading, localDataLoaded, loadLocalData } = useSavedPages(permissions, notify);
 
   useLayoutEffect(() => {
@@ -446,7 +447,9 @@ export const useCommandPaletteModel = ({
   };
 
   const handleSurfaceEscape = (event: KeyboardEvent<HTMLElement>): void => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      return;
+    }
 
     if (event.key !== 'Escape' || dialog) {
       return;
@@ -532,7 +535,10 @@ export const useCommandPaletteModel = ({
     }
 
     if (command.flow === 'confirm-close') {
-      if (!activeTab?.id || !isBulkCloseAction(command.action)) return;
+      if (!activeTab?.id || !isBulkCloseAction(command.action)) {
+        return;
+      }
+
       const tabIds = bulkCloseTabIds(tabs, activeTab, command.action);
       const count = tabIds.length;
 
@@ -553,6 +559,7 @@ export const useCommandPaletteModel = ({
         windowId: activeTab.windowId,
         tabIds,
       });
+
       return;
     }
 
@@ -632,8 +639,12 @@ export const useCommandPaletteModel = ({
   };
 
   const executeItem = async (item: PaletteItem): Promise<void> => {
-    if (executionPending.current) return;
+    if (executionPending.current) {
+      return;
+    }
+
     executionPending.current = true;
+
     try {
       await executeItemOnce(item);
     } finally {
@@ -894,6 +905,7 @@ export const useCommandPaletteModel = ({
     }
 
     dialogPending.current = true;
+
     try {
       if (dialog.kind === 'confirm-close') {
         await sendBackground('tabs:close-confirmed', {
@@ -955,6 +967,7 @@ export const useCommandPaletteModel = ({
           notify('Could not refresh tabs. Close and reopen the Command Bar to try again.'),
         );
       }
+
       setDialogError(error instanceof Error ? error.message : 'Could not complete that action.');
     } finally {
       dialogPending.current = false;
@@ -1037,7 +1050,10 @@ export const useCommandPaletteModel = ({
   };
 
   const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      return;
+    }
+
     if (event.key === 'Tab' && !event.shiftKey && mode === 'commands' && !activeProvider) {
       const provider = findSearchProvider(query);
 

@@ -4,20 +4,22 @@ import type { ManagedTab } from '@/utils/tabItems';
 import type { ResultsEmptyState } from '../ResultsList/types';
 import type { BulkCloseAction } from '@/utils/bulkClose';
 
+interface ConfirmCloseDialog {
+  kind: 'confirm-close';
+  action: BulkCloseAction;
+  count: number;
+  title: string;
+  anchorTabId: number;
+  windowId: number;
+  tabIds: number[];
+}
+
 export type FlowDialog =
   | { kind: 'rename'; tabId: number; initialName: string }
   | { kind: 'move'; tabId: number }
   | { kind: 'assign-group'; tabId: number }
   | { kind: 'group'; groupId: number | null; initialName: string; initialColor: string }
-  | {
-      kind: 'confirm-close';
-      action: BulkCloseAction;
-      count: number;
-      title: string;
-      anchorTabId: number;
-      windowId: number;
-      tabIds: number[];
-    };
+  | ConfirmCloseDialog;
 
 export interface ToastMessage {
   message: string;

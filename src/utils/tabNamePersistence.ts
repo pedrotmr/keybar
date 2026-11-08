@@ -4,10 +4,16 @@ export type TabNameMap = Record<string, RenamedTab>;
 export type TabIdentitySnapshot = Pick<chrome.tabs.Tab, 'id' | 'url' | 'title'>;
 
 export const normalizeTabNames = (value: unknown): TabNameMap => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
   return Object.fromEntries(
     Object.entries(value).filter(([key, entry]) => {
-      if (!/^(?:[0-9]+|stale:.+)$/.test(key) || !entry || typeof entry !== 'object') return false;
+      if (!/^(?:[0-9]+|stale:.+)$/.test(key) || !entry || typeof entry !== 'object') {
+        return false;
+      }
+
       const name = entry as Partial<RenamedTab>;
       return (
         typeof name.tabId === 'number' &&
