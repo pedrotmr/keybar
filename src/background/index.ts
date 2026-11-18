@@ -603,6 +603,11 @@ const handleRequest = async (
     case 'ui:tabs-changed':
     case 'ui:tabs-cycle':
       return typedBackgroundResult(action, true);
+    case 'shortcuts:list':
+      return typedBackgroundResult(
+        action,
+        chrome.commands.getAll().then((commands) => commands.map(({ name, shortcut }) => ({ name, shortcut }))),
+      );
     case 'permissions:get-all':
       return typedBackgroundResult(action, chrome.permissions.getAll());
 
