@@ -335,10 +335,11 @@ select:focus-visible {
   color: var(--cc-subtle);
   opacity: 1;
 }
+.search-area:has(.search-input:focus-visible) .search-symbol {
+  color: var(--cc-accent);
+}
 .search-input:focus-visible {
-  outline: 2px solid var(--cc-focus);
-  outline-offset: 2px;
-  border-radius: 3px;
+  outline: 0;
 }
 
 /* Brand tints come from searchProviders.ts as --provider-accent-light/-dark on each provider element. */
@@ -524,25 +525,114 @@ kbd {
   flex: 1;
   overflow: hidden;
 }
-.results-list {
+.results-list-scroll {
   height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 10px;
   scrollbar-color: var(--cc-border-strong) transparent;
   scrollbar-width: thin;
 }
-.results-list.is-opening-list {
+.results-list-scroll.is-opening-list {
   overflow: hidden;
 }
-.results-list::-webkit-scrollbar {
+.results-list-scroll::-webkit-scrollbar {
   width: 7px;
 }
-.results-list::-webkit-scrollbar-thumb {
+.results-list-scroll::-webkit-scrollbar-thumb {
   border: 2px solid var(--cc-bg);
   border-radius: 8px;
   background: var(--cc-border-strong);
 }
+.results-list-content {
+  position: relative;
+  min-height: 100%;
+}
+.results-list {
+  min-height: 100%;
+  padding: 10px;
+}
+.results-list-scroll:has(.results-list:empty) {
+  display: none;
+}
+.results-list:empty {
+  display: none;
+}
+/* Keep row actions aligned with options without nesting controls inside listbox options. */
+.result-actions-layer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+}
+.result-actions-trigger {
+  position: absolute;
+  inset-inline-end: 22px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--cc-muted);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out,
+    background-color 100ms ease-out,
+    color 100ms ease-out;
+}
+.result-actions-trigger svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.result-actions-trigger[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--cc-text) 10%, transparent);
+  color: var(--cc-text);
+}
+.result-actions-trigger:active {
+  transform: scale(0.92);
+}
+@media (hover: hover) {
+  .result-actions-trigger {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(5px);
+  }
+  .result-actions-trigger.is-hovered,
+  .result-actions-trigger:focus-visible,
+  .result-actions-trigger[aria-expanded='true'] {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+  .result-actions-trigger:hover {
+    background: color-mix(in srgb, var(--cc-text) 10%, transparent);
+    color: var(--cc-text);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .result-actions-trigger {
+    transition: none;
+    transform: none;
+  }
+}
+.result-row.has-actions {
+  padding-inline-end: 48px;
+}
+.result-row.is-selected {
+  border-color: transparent;
+  background: var(--cc-selection);
+}
+.result-row.is-selected .result-icon {
+  color: var(--cc-accent);
+}
+.result-row.is-selected .result-badge {
+  color: var(--cc-accent);
+}
+
 .result-row {
   position: relative;
   display: flex;
@@ -558,18 +648,7 @@ kbd {
   user-select: none;
   transition:
     background-color 120ms ease-out,
-    border-color 120ms ease-out,
     opacity 180ms ease-out;
-}
-.result-row.is-selected {
-  border-color: var(--cc-selection-border);
-  background: var(--cc-selection);
-}
-.result-row.is-selected .result-icon {
-  color: var(--cc-accent);
-}
-.result-row.is-selected .result-badge {
-  color: var(--cc-accent);
 }
 .result-icon-wrap {
   display: grid;
@@ -687,32 +766,12 @@ mark {
   font-weight: 500;
   box-decoration-break: clone;
 }
-.results-list:empty {
-  display: none;
-}
-
-.result-actions-toolbar-trigger svg {
-  display: block;
-  width: 16px;
-  height: 16px;
-}
-.result-actions-toolbar-trigger[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--cc-text) 10%, transparent);
-  color: var(--cc-text);
-}
-.result-actions-toolbar-trigger:active {
-  transform: scale(0.92);
-}
-
 /* While the actions dock is open, the row it acts on stays clear and the rest of the bar recedes. */
 .command-center.has-action-dock .search-area {
   opacity: 0.8;
 }
 .command-center.has-action-dock .result-row:not(.is-selected) {
   opacity: 0.55;
-}
-.command-center.has-action-dock .result-row.is-selected {
-  border-color: color-mix(in srgb, var(--cc-accent) 40%, transparent);
 }
 /* The dock shares the results cell, so the auto-height overlay grows to fit it instead of clipping it. */
 .command-center.has-action-dock .results-region {
@@ -1558,7 +1617,7 @@ mark {
 .command-center.is-overlay-surface .results-region {
   flex: 0 1 auto;
 }
-.command-center.is-overlay-surface .results-list {
+.command-center.is-overlay-surface .results-list-scroll {
   height: auto;
   max-height: calc(var(--cc-bar-available) - var(--cc-search-height) - 2px);
 }
@@ -1942,7 +2001,7 @@ body:has(.cc-root > .tab-switcher-overlay),
   .provider-hint:active:not(:disabled),
   .provider-candidate:active:not(:disabled),
   .option-card:active:not(:disabled),
-  .result-actions-toolbar-trigger:active,
+  .result-actions-trigger:active,
   .notice-dismiss:active:not(:disabled) {
     transform: none;
   }
@@ -1976,15 +2035,33 @@ body:has(.cc-root > .tab-switcher-overlay),
   select:focus-visible {
     outline-color: Highlight !important;
   }
-  .result-row.is-selected,
   .option-card.is-active,
   .tab-card.is-selected {
     outline: 1px solid Highlight;
     outline-offset: 1px;
   }
-  .result-row.is-selected,
   .tab-card.is-selected {
     border-color: Highlight;
+  }
+  .search-area:has(.search-input:focus-visible) .search-symbol {
+    color: Highlight;
+  }
+  .result-row.is-selected {
+    border-color: transparent;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .result-row.is-selected
+    :is(
+      .result-icon-wrap,
+      .result-icon,
+      .result-title,
+      .result-subtitle,
+      .result-badge,
+      .tab-audible,
+      .favicon-fallback
+    ) {
+    color: HighlightText;
   }
   .action-dock-item:focus-visible {
     outline: 2px solid Highlight;

@@ -1202,7 +1202,7 @@ export const useCommandPaletteModel = ({
       (event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
       results.length &&
       event.target instanceof Element &&
-      event.target.closest('.result-actions-toolbar-trigger')
+      event.target.closest('.result-actions-trigger')
     ) {
       // From a row's actions button, arrows go back to moving the selection from the search field.
       event.preventDefault();

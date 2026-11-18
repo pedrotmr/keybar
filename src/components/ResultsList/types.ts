@@ -38,6 +38,9 @@ interface ResultsListInteractionProps {
   onItemClick: (index: number) => void;
   onItemHover: (index: number) => void;
   onItemContextMenu?: (index: number) => boolean;
+  onItemActions: (index: number, fromKeyboard: boolean) => void;
+  actionsMenuId: string;
+  openActionsIndex?: number;
 }
 
 export type ResultsListProps = ResultsListDataProps & ResultsListStatusProps & ResultsListInteractionProps;
@@ -53,6 +56,7 @@ interface ResultRowDataProps {
 interface ResultRowInteractionProps {
   onItemClick: (index: number) => void;
   onItemHover: (index: number) => void;
+  onActionsHover: (itemId: string | null) => void;
   onItemContextMenu?: (index: number) => boolean;
 }
 

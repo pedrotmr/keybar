@@ -51,11 +51,12 @@ export const resultPageSize = (list: HTMLElement): number => {
 
   const rowStyle = window.getComputedStyle(row);
   const listStyle = window.getComputedStyle(list);
+  const viewport = list.closest<HTMLElement>('.results-list-scroll') ?? list;
   const margin = (Number.parseFloat(rowStyle.marginTop) || 0) + (Number.parseFloat(rowStyle.marginBottom) || 0);
   const padding = (Number.parseFloat(listStyle.paddingTop) || 0) + (Number.parseFloat(listStyle.paddingBottom) || 0);
   const rowPitch = row.getBoundingClientRect().height + margin;
 
-  return Math.max(1, Math.floor((list.clientHeight - padding) / Math.max(1, rowPitch)));
+  return Math.max(1, Math.floor((viewport.clientHeight - padding) / Math.max(1, rowPitch)));
 };
 
 export const initialResultLimit = (

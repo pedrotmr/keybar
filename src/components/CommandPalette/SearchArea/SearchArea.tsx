@@ -3,7 +3,6 @@ import type { PaletteItem } from '@/types';
 import type { SearchProviderDefinition } from '@/utils/searchProviders';
 import { resultDomId } from '../../ResultsList/helpers';
 import { ProviderIcon, providerAccentStyle } from '../../ProviderIcon';
-import { MoreGlyph } from '../../ResultsList/ResultRow/MoreGlyph';
 import { BackGlyph } from './BackGlyph';
 
 interface SearchAreaSearchProps {
@@ -19,8 +18,6 @@ interface SearchAreaViewStateProps {
   hasSelectedTab: boolean;
   showResults: boolean;
   resultsLength: number;
-  actionDockId: string;
-  actionDockOpen: boolean;
 }
 
 interface SearchAreaHandlerProps {
@@ -28,7 +25,6 @@ interface SearchAreaHandlerProps {
   onSearchKeyDown: KeyboardEventHandler<HTMLInputElement>;
   onReturnToCommandSearch: () => void;
   onActivateProvider: (provider: SearchProviderDefinition) => void;
-  onOpenSelectedActions: (fromKeyboard: boolean) => void;
   onOpenSettings: () => void;
 }
 
@@ -44,13 +40,10 @@ export function SearchArea({
   hasSelectedTab,
   showResults,
   resultsLength,
-  actionDockId,
-  actionDockOpen,
   onQueryChange,
   onSearchKeyDown,
   onReturnToCommandSearch,
   onActivateProvider,
-  onOpenSelectedActions,
   onOpenSettings,
 }: SearchAreaProps) {
   return (
@@ -107,8 +100,8 @@ export function SearchArea({
         spellCheck={false}
       />
       <span id="tab-actions-hint" className="visually-hidden">
-        The Actions button is in the Command Bar controls. F2 renames the selected tab. Shift F10, the Context Menu key,
-        or Command/Control K also opens tab actions.
+        Each tab row has an Actions button. F2 renames the selected tab. Shift F10, the Context Menu key, or
+        Command/Control K also opens tab actions.
       </span>
       <span
         id="provider-suggestion-status"
@@ -156,21 +149,6 @@ export function SearchArea({
               </button>
             ))}
           </div>
-        )}
-        {hasSelectedTab && selectedItem?.type === 'tab' && (
-          <button
-            type="button"
-            className="mode-icon-button result-actions-toolbar-trigger"
-            aria-label={`Actions for ${selectedItem.title}`}
-            aria-describedby={resultDomId(selectedItem.id)}
-            aria-haspopup="menu"
-            aria-expanded={actionDockOpen}
-            aria-controls={actionDockOpen ? actionDockId : undefined}
-            title={`Actions for ${selectedItem.title}`}
-            onClick={(event) => onOpenSelectedActions(event.detail === 0)}
-          >
-            <MoreGlyph />
-          </button>
         )}
         <button type="button" aria-label="Appearance settings" className="mode-icon-button" onClick={onOpenSettings}>
           <svg
