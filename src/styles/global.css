@@ -458,6 +458,44 @@ select:focus-visible {
   height: 16px;
   flex: 0 0 16px;
 }
+.provider-candidates {
+  display: flex;
+  max-width: min(44vw, 240px);
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-color: var(--cc-border-strong) transparent;
+  scrollbar-width: thin;
+}
+.provider-candidate {
+  display: inline-flex;
+  min-width: 0;
+  height: var(--cc-control);
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cc-muted);
+  cursor: pointer;
+  font-size: calc(11px * var(--cc-font-scale));
+  font-weight: 500;
+  white-space: nowrap;
+}
+.provider-candidate > span {
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.provider-candidate-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
 
 kbd {
   display: inline-flex;
@@ -1477,6 +1515,7 @@ mark {
 .mode-button,
 .mode-icon-button,
 .provider-hint,
+.provider-candidate,
 .button-secondary,
 .button-primary,
 .button-danger,
@@ -1491,6 +1530,7 @@ mark {
 .mode-button:active:not(:disabled),
 .mode-icon-button:active:not(:disabled),
 .provider-hint:active:not(:disabled),
+.provider-candidate:active:not(:disabled),
 .button-secondary:active:not(:disabled),
 .button-primary:active:not(:disabled),
 .button-danger:active:not(:disabled),
@@ -1792,6 +1832,7 @@ mark {
   .mode-button:hover,
   .mode-icon-button:hover,
   .provider-hint:hover,
+  .provider-candidate:hover,
   .provider-chip button:hover,
   .notice-dismiss:hover {
     background: var(--cc-hover);
@@ -1937,6 +1978,7 @@ body:has(.cc-root > .tab-switcher-overlay),
   .button-primary:active:not(:disabled),
   .button-danger:active:not(:disabled),
   .provider-hint:active:not(:disabled),
+  .provider-candidate:active:not(:disabled),
   .option-card:active:not(:disabled),
   .result-actions-trigger:active,
   .notice-dismiss:active:not(:disabled) {

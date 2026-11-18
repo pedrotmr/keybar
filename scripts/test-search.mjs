@@ -20,9 +20,14 @@ after(async () => server.close());
 const manifest = JSON.parse(await readFile(path.join(projectRoot, 'src/manifest.json'), 'utf8'));
 const artifacts = JSON.parse(await readFile(path.join(projectRoot, 'extension-artifacts.json'), 'utf8'));
 const { searchItems, searchProviderItems } = await server.ssrLoadModule('/src/utils/fuzzySearch.ts');
-const { createProviderSearchItem, findSearchProvider, parseProviderQuery } = await server.ssrLoadModule(
-  '/src/utils/searchProviders.ts',
-);
+const {
+  createProviderSearchItem,
+  findProviderQueryMatch,
+  findSearchProvider,
+  findSearchProviders,
+  parseProviderQuery,
+  searchProviders,
+} = await server.ssrLoadModule('/src/utils/searchProviders.ts');
 const { initialCommandItems, toTabItems } = await server.ssrLoadModule('/src/utils/tabItems.ts');
 const {
   installTabSwitcherKeyReleaseMonitor,
@@ -678,9 +683,185 @@ test('search ranking and navigation behavior', async () => {
     );
     assert.equal(findSearchProvider('go')?.id, 'google', 'the original Google Tab alias is preserved');
     assert.deepEqual(
+      findSearchProviders('g').map((provider) => provider.id),
+      ['google', 'chatgpt'],
+      'progressive prefix collisions remain visible to callers',
+    );
+    assert.equal(findSearchProvider('g')?.id, 'google', 'an exact canonical prefix wins over an alias collision');
+    assert.equal(parseProviderQuery('g weather')?.provider.id, 'google', 'canonical triggers resolve query collisions');
+    for (const alias of ['yt', 'yo', 'you', 'yout', 'youtu', 'youtub', 'youtube']) {
+      assert.equal(findSearchProvider(alias)?.id, 'youtube', `YouTube trigger prefix ${alias} is recognized`);
+    }
+    for (const alias of ['ya', 'yah', 'yaho', 'yahoo']) {
+      assert.equal(findSearchProvider(alias)?.id, 'yahoo', `Yahoo trigger prefix ${alias} is recognized`);
+    }
+    for (const alias of ['ch', 'cha', 'chat', 'gp', 'gpt', 'chatgpt']) {
+      assert.equal(findSearchProvider(alias)?.id, 'chatgpt', `ChatGPT trigger prefix ${alias} is recognized`);
+    }
+    for (const provider of searchProviders) {
+      const aliases = [provider.prefix, ...provider.aliases, provider.name, ...provider.name.split(/\s+/)];
+
+      for (const alias of aliases) {
+        const normalizedAlias = alias.toLowerCase();
+        const minimumLength = normalizedAlias.includes(' ')
+          ? normalizedAlias.length
+          : Math.min(2, normalizedAlias.length);
+
+        for (let length = minimumLength; length <= normalizedAlias.length; length += 1) {
+          const prefix = normalizedAlias.slice(0, length);
+          assert.ok(
+            findSearchProviders(prefix).some((candidate) => candidate.id === provider.id),
+            `${provider.name} is suggested for progressive trigger ${prefix}`,
+          );
+        }
+      }
+    }
+    const googleMaps = {
+      ...searchProviders[0],
+      id: 'google-maps',
+      name: 'Google Maps',
+      prefix: 'gm',
+      aliases: ['gm', 'ma', 'maps'],
+      urlTemplate: 'https://www.google.com/maps/search/%s',
+    };
+    const appleMaps = {
+      ...searchProviders[0],
+      id: 'apple-maps',
+      name: 'Apple Maps',
+      prefix: 'amaps',
+      aliases: ['amaps', 'ma', 'maps'],
+      urlTemplate: 'https://maps.apple.com/?q=%s',
+    };
+    const mapsRegistry = [searchProviders[0], googleMaps];
+    const ambiguousMapsRegistry = [searchProviders[0], googleMaps, appleMaps];
+    for (const alias of ['gm', 'ma', 'map', 'maps', 'google maps']) {
+      assert.equal(
+        findSearchProvider(alias, mapsRegistry)?.id,
+        'google-maps',
+        `Google Maps trigger ${alias} is recognized when registered`,
+      );
+    }
+    assert.equal(
+      findProviderQueryMatch('Google Maps', mapsRegistry),
+      null,
+      'a full compound provider name alone remains a suggestion rather than a query',
+    );
+    assert.equal(
+      parseProviderQuery('google maps lunch', mapsRegistry)?.provider.id,
+      'google-maps',
+      'the full compound provider name wins over its shorter Google word match',
+    );
+    assert.equal(
+      parseProviderQuery('google maps lunch', mapsRegistry)?.query,
+      'lunch',
+      'a full compound provider name followed by a query selects that provider',
+    );
+    assert.deepEqual(
+      findSearchProviders('ma', ambiguousMapsRegistry).map((provider) => provider.id),
+      ['google-maps', 'apple-maps'],
+      'an ambiguous map prefix exposes each registered candidate in registry order',
+    );
+    assert.equal(findProviderQueryMatch('ma lunch', mapsRegistry)?.query, 'lunch');
+    assert.equal(
+      findProviderQueryMatch('ma lunch', mapsRegistry)?.provider,
+      null,
+      'an alias remains a suggestion until the user explicitly selects it',
+    );
+    assert.equal(
+      findProviderQueryMatch('ma lunch', ambiguousMapsRegistry)?.query,
+      'lunch',
+      'ambiguous triggers retain the typed query for an explicit provider choice',
+    );
+    assert.equal(
+      parseProviderQuery('ma lunch', ambiguousMapsRegistry),
+      null,
+      'ambiguous provider triggers never silently select a provider',
+    );
+    assert.equal(
+      parseProviderQuery('gm lunch spots', mapsRegistry)?.query,
+      'lunch spots',
+      'a unique Google Maps trigger preserves the full query',
+    );
+    assert.equal(
+      findProviderQueryMatch('YoUt cats in hats')?.query,
+      'cats in hats',
+      'provider suggestions are case-insensitive and preserve the full query',
+    );
+    assert.equal(
+      findProviderQueryMatch('YoUt cats in hats')?.provider,
+      null,
+      'a natural-language alias needs explicit selection before it can hand off',
+    );
+    assert.equal(
+      parseProviderQuery('YT cats  in hats')?.query,
+      'cats  in hats',
+      'committed provider triggers preserve repeated whitespace inside the query',
+    );
+    assert.equal(
+      parseProviderQuery('research notes'),
+      null,
+      'normal multi-word searches are not parsed as provider triggers',
+    );
+    assert.deepEqual(searchItems([], 'you music', true), [], 'provider triggers do not run in the Tab Switcher');
+    assert.equal(
+      searchItems([], 'chore list')[0].id,
+      'search-google',
+      'ordinary queries that only share a first letter remain normal web searches',
+    );
+    assert.equal(
+      parseProviderQuery('t weather'),
+      null,
+      'a one-letter fragment of a longer alias does not commit a provider handoff',
+    );
+    assert.deepEqual(
+      findProviderQueryMatch('t weather')?.providers.map((provider) => provider.id),
+      ['x'],
+      'a one-letter fragment can remain a provider suggestion',
+    );
+    assert.equal(
+      searchItems([], 't weather')[0].url,
+      'https://www.google.com/search?q=t%20weather',
+      'an uncommitted alias fragment keeps the full-query web fallback',
+    );
+    assert.deepEqual(
+      findProviderQueryMatch('c programming')?.providers.map((provider) => provider.id),
+      ['chatgpt', 'claude'],
+      'ambiguous partial triggers expose all matching providers',
+    );
+    assert.equal(
+      searchItems([], 'c programming')[0].id,
+      'search-google',
+      'an unresolved provider choice keeps the full-query web fallback available',
+    );
+    assert.equal(
+      searchItems([], 'you are here')[0].url,
+      'https://www.google.com/search?q=you%20are%20here',
+      'a natural-language sentence beginning with an alias is not rewritten as a provider query',
+    );
+    assert.equal(
+      searchItems([], 'yt cats  in hats')[0].url,
+      'https://www.youtube.com/results?search_query=cats%20%20in%20hats',
+      'provider URLs preserve repeated whitespace in the query',
+    );
+    assert.equal(
+      parseProviderQuery('yt cats\tin hats')?.query,
+      'cats\tin hats',
+      'provider parsing preserves tabs inside the query',
+    );
+    assert.equal(
+      searchItems([], 'yt cats\tin hats')[0].url,
+      'https://www.youtube.com/results?search_query=cats%09in%20hats',
+      'provider URLs encode preserved tabs safely',
+    );
+    assert.deepEqual(
       searchItems([], 'yt', false, false),
       [],
       'a provider hint does not compete with a generic Google fallback before Tab is pressed',
+    );
+    assert.deepEqual(
+      searchItems([], 'youtub', false, false),
+      [],
+      'a progressive standalone trigger offers a provider hint without searching',
     );
     assert.equal(
       createProviderSearchItem(findSearchProvider('youtube'), 'lo-fi music').url,
@@ -688,10 +869,11 @@ test('search ranking and navigation behavior', async () => {
       'activated providers encode the typed query safely',
     );
     assert.equal(
-      parseProviderQuery('google drive'),
-      null,
-      'a provider name followed by ordinary words is not misread as a command prefix',
+      parseProviderQuery('google drive')?.provider.id,
+      'google',
+      'full provider names remain valid search triggers',
     );
+    assert.equal(parseProviderQuery('google drive')?.query, 'drive', 'full provider names preserve the query');
     const githubBookmark = {
       id: 'bookmark-github',
       type: 'bookmark',

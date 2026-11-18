@@ -36,7 +36,7 @@ export function CommandPalette(props: CommandPaletteProps) {
         <>
           <SearchArea
             activeProvider={model.activeProvider}
-            providerCandidate={model.providerCandidate}
+            providerCandidates={model.providerCandidates}
             query={model.query}
             inputRef={model.inputRef}
             selectedItem={model.selectedItem}
@@ -46,7 +46,7 @@ export function CommandPalette(props: CommandPaletteProps) {
             onQueryChange={model.handleQueryChange}
             onSearchKeyDown={model.handleSearchKeyDown}
             onReturnToCommandSearch={model.returnToCommandSearch}
-            onActivateProvider={model.activateProvider}
+            onActivateProvider={model.activateSuggestedProvider}
             onOpenSettings={() => model.changeMode('settings')}
           />
           {model.showResults && (

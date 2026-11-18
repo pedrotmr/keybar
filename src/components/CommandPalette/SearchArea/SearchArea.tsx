@@ -7,7 +7,7 @@ import { BackGlyph } from './BackGlyph';
 
 interface SearchAreaSearchProps {
   activeProvider: SearchProviderDefinition | null;
-  providerCandidate: SearchProviderDefinition | null;
+  providerCandidates: SearchProviderDefinition[];
   query: string;
   selectedItem?: PaletteItem;
 }
@@ -31,7 +31,7 @@ interface SearchAreaProps extends SearchAreaSearchProps, SearchAreaViewStateProp
 
 export function SearchArea({
   activeProvider,
-  providerCandidate,
+  providerCandidates,
   query,
   inputRef,
   selectedItem,
@@ -91,9 +91,8 @@ export function SearchArea({
         aria-controls={showResults ? 'command-center-results' : undefined}
         aria-activedescendant={selectedItem ? resultDomId(selectedItem.id) : undefined}
         aria-describedby={
-          [providerCandidate ? 'provider-tab-hint' : '', hasSelectedTab ? 'tab-actions-hint' : '']
-            .filter(Boolean)
-            .join(' ') || undefined
+          ['provider-suggestion-status', hasSelectedTab ? 'tab-actions-hint' : ''].filter(Boolean).join(' ') ||
+          undefined
         }
         autoComplete="off"
         spellCheck={false}
@@ -101,25 +100,49 @@ export function SearchArea({
       <span id="tab-actions-hint" className="visually-hidden">
         F2 renames the selected tab. Shift F10, the Context Menu key, or Command/Control K opens tab actions.
       </span>
-      {providerCandidate && (
-        <span id="provider-tab-hint" className="visually-hidden">
-          Press Tab to {providerCandidate.verb.toLowerCase()} {providerCandidate.name}.
-        </span>
-      )}
+      <span
+        id="provider-suggestion-status"
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {providerCandidates.length > 1
+          ? `${providerCandidates.length} search providers match: ${providerCandidates.map((provider) => provider.name).join(', ')}. Press Tab to choose.`
+          : providerCandidates.length === 1
+            ? `${providerCandidates[0].verb} ${providerCandidates[0].name}. Press Tab to select.`
+            : ''}
+      </span>
       <div className="mode-nav" role="group" aria-label="Command Bar controls">
-        {providerCandidate && (
+        {providerCandidates.length === 1 && (
           <button
             type="button"
             className="provider-hint"
-            aria-label={`${providerCandidate.verb} ${providerCandidate.name}`}
-            onClick={() => onActivateProvider(providerCandidate)}
+            aria-label={`${providerCandidates[0].verb} ${providerCandidates[0].name}`}
+            onClick={() => onActivateProvider(providerCandidates[0])}
           >
-            <ProviderIcon providerId={providerCandidate.id} className="provider-hint-icon" />
+            <ProviderIcon providerId={providerCandidates[0].id} className="provider-hint-icon" />
             <kbd aria-hidden="true">Tab</kbd>
             <span>
-              {providerCandidate.verb} {providerCandidate.name}
+              {providerCandidates[0].verb} {providerCandidates[0].name}
             </span>
           </button>
+        )}
+        {providerCandidates.length > 1 && (
+          <div className="provider-candidates" role="group" aria-label="Matching search providers">
+            {providerCandidates.map((provider) => (
+              <button
+                key={provider.id}
+                type="button"
+                className="provider-candidate"
+                aria-label={`${provider.verb} ${provider.name}`}
+                onClick={() => onActivateProvider(provider)}
+              >
+                <ProviderIcon providerId={provider.id} className="provider-candidate-icon" />
+                <span>{provider.name}</span>
+              </button>
+            ))}
+          </div>
         )}
         <button type="button" aria-label="Appearance settings" className="mode-icon-button" onClick={onOpenSettings}>
           <svg

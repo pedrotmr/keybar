@@ -16,7 +16,12 @@ import { getCommands } from '@/utils/commands';
 import { bulkCloseTabIds, isBulkCloseAction } from '@/utils/bulkClose';
 import { normalizeNavigationUrl, sendBackground } from '@/utils/chromeHelpers';
 import { writeClipboardText } from '@/utils/clipboard';
-import { findSearchProvider, parseProviderQuery } from '@/utils/searchProviders';
+import {
+  findProviderQueryMatch,
+  findSearchProvider,
+  findSearchProviders,
+  parseProviderQuery,
+} from '@/utils/searchProviders';
 import type { SearchProviderDefinition } from '@/utils/searchProviders';
 import { isTabInSplitView } from '@/utils/splitViews';
 import { TAB_GROUP_ID_NONE } from '@/utils/chromeApiConstants';
@@ -293,15 +298,31 @@ export const useCommandPaletteModel = ({
     };
   }, [mode, query, permissions, localDataLoaded, localDataLoading]);
 
-  const providerCandidate = useMemo(() => {
-    const term = query.trim();
-
-    if (mode !== 'commands' || activeProvider || parseProviderQuery(term)) {
+  const providerQueryMatch = useMemo(() => {
+    if (mode !== 'commands' || activeProvider) {
       return null;
     }
 
-    return findSearchProvider(term);
+    return findProviderQueryMatch(query);
   }, [mode, query, activeProvider]);
+
+  const providerCandidates = useMemo(() => {
+    if (mode !== 'commands' || activeProvider) {
+      return [];
+    }
+
+    if (providerQueryMatch) {
+      return providerQueryMatch.provider ? [] : providerQueryMatch.providers;
+    }
+
+    const matches = findSearchProviders(query);
+    if (!matches.length) return [];
+
+    const resolved = findSearchProvider(query);
+    return resolved ? [resolved] : matches;
+  }, [mode, query, activeProvider, providerQueryMatch]);
+
+  const providerCandidate = providerCandidates.length === 1 ? providerCandidates[0] : null;
 
   const sourceItems = useMemo<PaletteItem[]>(() => {
     if (mode === 'settings') {
@@ -326,14 +347,14 @@ export const useCommandPaletteModel = ({
     }
 
     const start = performance.now();
-    const allowFallback = !localDataLoading && !providerCandidate;
+    const allowFallback = !localDataLoading && (providerCandidates.length === 0 || Boolean(providerQueryMatch?.query));
     const searchableItems = !query.trim() && mode === 'commands' ? initialItems : sourceItems;
     const found = findPaletteResults(activeProvider, query, mode, searchableItems, allowFallback);
 
     if (
       savedSearchPrompt &&
       !activeProvider &&
-      !providerCandidate &&
+      !providerCandidates.length &&
       !parseProviderQuery(query) &&
       !normalizeNavigationUrl(query)
     ) {
@@ -359,7 +380,7 @@ export const useCommandPaletteModel = ({
     isUnfilteredExpandedView,
     savedSearchPrompt,
     activeProvider,
-    providerCandidate,
+    providerCandidates,
     localDataLoading,
     tabsReady,
   ]);
@@ -694,12 +715,16 @@ export const useCommandPaletteModel = ({
     }
   };
 
-  const activateProvider = (provider: SearchProviderDefinition): void => {
+  const activateProvider = (provider: SearchProviderDefinition, nextQuery = ''): void => {
     providerOriginQuery.current = query;
     setActiveProvider(provider);
-    setQuery('');
+    setQuery(nextQuery);
     setSelectedIndex(0);
     inputRef.current?.focus({ preventScroll: true });
+  };
+
+  const activateSuggestedProvider = (provider: SearchProviderDefinition): void => {
+    activateProvider(provider, providerQueryMatch?.provider ? '' : (providerQueryMatch?.query ?? ''));
   };
 
   const returnToCommandSearch = (): void => {
@@ -1055,11 +1080,9 @@ export const useCommandPaletteModel = ({
     }
 
     if (event.key === 'Tab' && !event.shiftKey && mode === 'commands' && !activeProvider) {
-      const provider = findSearchProvider(query);
-
-      if (provider) {
+      if (providerCandidate) {
         event.preventDefault();
-        activateProvider(provider);
+        activateSuggestedProvider(providerCandidate);
         return;
       }
     }
@@ -1093,11 +1116,6 @@ export const useCommandPaletteModel = ({
       event.preventDefault();
       void executeItem(selectedItem);
       return;
-    }
-
-    if (event.key === 'Enter' && providerCandidate) {
-      event.preventDefault();
-      activateProvider(providerCandidate);
     }
   };
 
@@ -1311,6 +1329,7 @@ export const useCommandPaletteModel = ({
     query,
     activeProvider,
     providerCandidate,
+    providerCandidates,
     inputRef,
     commandCenterRef,
     settingsViewRef,
@@ -1363,6 +1382,7 @@ export const useCommandPaletteModel = ({
     handleQueryChange,
     returnToCommandSearch,
     activateProvider,
+    activateSuggestedProvider,
     openShortcuts,
     handleResultClick,
     handleResultHover,
