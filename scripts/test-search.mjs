@@ -36,6 +36,7 @@ const { initialCommandItems, toTabItems } = await server.ssrLoadModule('/src/uti
 const {
   installTabSwitcherKeyReleaseMonitor,
   installTabSwitcherKeyReleaseMonitorInPage,
+  getTabSwitcherReleaseKeyFromShortcut,
   isTabSwitcherModifierKey,
   wasTabSwitcherModifierReleasedAfter,
 } = await server.ssrLoadModule('/src/utils/tabSwitcherKeyRelease.ts');
@@ -429,6 +430,11 @@ test('initial tab result ordering and presentation', async () => {
     );
     assert.equal(isTabSwitcherModifierKey('Alt'), true, 'Alt release completes Alt-based user-customized shortcuts');
     assert.equal(isTabSwitcherModifierKey('Shift'), false, 'Shift release alone does not activate the selected tab');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('Ctrl+A'), 'Control');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('MacCtrl+A'), 'Control');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('Command+T'), 'Meta');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('Alt+Shift+K'), 'Alt');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('K'), null);
   }
 });
 
@@ -448,16 +454,18 @@ test('modifier release and popup launch behavior', async () => {
       const switcherOpenedAt = Date.now() - 1000;
       releaseListener({ key: 'Control', isTrusted: false });
       assert.equal(
-        wasTabSwitcherModifierReleasedAfter(switcherOpenedAt),
+        wasTabSwitcherModifierReleasedAfter(switcherOpenedAt, 'Control'),
         false,
         'page-generated keyboard events cannot prime automatic tab activation',
       );
-      releaseListener({ key: 'Control', isTrusted: true });
+      releaseListener({ key: 'Alt', isTrusted: true });
       assert.equal(
-        wasTabSwitcherModifierReleasedAfter(switcherOpenedAt),
-        true,
-        'a customized Control shortcut released before the switcher finishes mounting activates its selected tab',
+        wasTabSwitcherModifierReleasedAfter(switcherOpenedAt, 'Control'),
+        false,
+        'releasing an unrelated modifier does not activate the selected tab',
       );
+      releaseListener({ key: 'Control', isTrusted: true });
+      assert.equal(wasTabSwitcherModifierReleasedAfter(switcherOpenedAt, 'Control'), true);
     } finally {
       if (originalWindowDescriptor) Object.defineProperty(globalThis, 'window', originalWindowDescriptor);
       else delete globalThis.window;
@@ -471,7 +479,7 @@ test('modifier release and popup launch behavior', async () => {
     runInNewContext(`(${installTabSwitcherKeyReleaseMonitorInPage.toString()})()`, { window: serializedWindow });
     releaseListener({ key: 'Alt', isTrusted: true });
     assert.ok(
-      serializedWindow.__keybarKeyReleaseState.lastModifierReleaseAt > 0,
+      serializedWindow.__keybarKeyReleaseState.releaseAtByKey.Alt > 0,
       'the same modifier listener runs when serialized into Chrome’s isolated world',
     );
 
@@ -479,6 +487,7 @@ test('modifier release and popup launch behavior', async () => {
       mode: 'tabs',
       openedAt: 1234,
       autoSwitchOnRelease: false,
+      releaseKey: null,
     });
     assert.equal(parsePopupLaunchFallback(new URLSearchParams('mode=permission-request&openedAt=1234')), null);
     const previousChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
@@ -501,18 +510,19 @@ test('modifier release and popup launch behavior', async () => {
       },
     });
     try {
-      await writePopupLaunchIntent({ mode: 'tabs', autoSwitchOnRelease: true, openedAt: 4567 });
+      await writePopupLaunchIntent({ mode: 'tabs', autoSwitchOnRelease: true, openedAt: 4567, releaseKey: 'Control' });
       assert.deepEqual(await consumePopupLaunchIntent(), {
         mode: 'tabs',
         autoSwitchOnRelease: true,
         openedAt: 4567,
+        releaseKey: 'Control',
       });
       assert.deepEqual(sessionValues, {}, 'consuming a launch intent clears its one-shot session values');
       await writePopupLaunchIntent({ mode: 'commands', autoSwitchOnRelease: false, openedAt: 5678 });
       failSessionRemoval = true;
       assert.deepEqual(
         await consumePopupLaunchIntent(),
-        { mode: 'commands', autoSwitchOnRelease: false, openedAt: 5678 },
+        { mode: 'commands', autoSwitchOnRelease: false, openedAt: 5678, releaseKey: null },
         'a stored intent remains usable when one-shot cleanup fails',
       );
     } finally {

@@ -2,7 +2,6 @@ import type { ResultRowProps } from '../types';
 import { displayDetails, formatDisplayUrl, itemBadge, optionLabel, resultDomId } from '../helpers';
 import { HighlightedText } from './HighlightedText';
 import { ItemIcon } from './ItemIcon';
-import { MoreGlyph } from './MoreGlyph';
 
 export function ResultRow({
   item,
@@ -13,23 +12,17 @@ export function ResultRow({
   onItemClick,
   onItemHover,
   onItemContextMenu,
-  hasItemActions,
-  onItemActions,
-  openActionsIndex,
-  actionsMenuId,
 }: ResultRowProps) {
   const badge = itemBadge(item);
   const details = displayDetails(item);
-  const hasActions = Boolean(onItemActions && hasItemActions?.(item));
-  const actionsOpen = hasActions && index === openActionsIndex;
 
   return (
     <div
       id={resultDomId(item.id)}
-      className={`result-row${selected ? ' is-selected' : ''}${item.type === 'tab' && item.current ? ' is-active-tab' : ''}${hasActions ? ' has-actions' : ''}${actionsOpen ? ' is-actions-target' : ''}`}
+      className={`result-row${selected ? ' is-selected' : ''}${item.type === 'tab' && item.current ? ' is-active-tab' : ''}`}
       role="option"
       aria-selected={selected}
-      aria-label={hasActions ? optionLabel(item, details, badge) : undefined}
+      aria-label={item.type === 'tab' ? optionLabel(item, details, badge) : undefined}
       aria-description={item.type === 'bookmark' ? `Saved address: ${formatDisplayUrl(item.url)}` : undefined}
       title={item.type === 'bookmark' ? formatDisplayUrl(item.url) : undefined}
       onMouseEnter={() => onItemHover(index)}
@@ -68,25 +61,6 @@ export function ResultRow({
       >
         {badge}
       </span>
-      {hasActions && (
-        <button
-          type="button"
-          className="result-actions-trigger"
-          // Only the selected row's button is a Tab stop; arrow keys still drive selection from the search field.
-          tabIndex={selected ? 0 : -1}
-          aria-label={`Actions for ${item.title}`}
-          aria-haspopup="menu"
-          aria-expanded={actionsOpen}
-          aria-controls={actionsOpen ? actionsMenuId : undefined}
-          onClick={(event) => {
-            event.stopPropagation();
-            // Keyboard activation reports detail 0; it moves focus to the first action.
-            onItemActions?.(index, event.detail === 0);
-          }}
-        >
-          <MoreGlyph />
-        </button>
-      )}
     </div>
   );
 }

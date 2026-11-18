@@ -3,6 +3,7 @@ import type { PaletteMode, ThemePreferences } from '@/types';
 import { CommandPalette } from '@/components/CommandPalette';
 import { TabSwitcher } from '@/components/TabSwitcher';
 import { sendBackground } from '@/utils/chromeHelpers';
+import type { TabSwitcherReleaseKey } from '@/utils/tabSwitcherKeyRelease';
 
 interface PopupProps {
   initialMode: PaletteMode;
@@ -10,6 +11,7 @@ interface PopupProps {
   initialSwitcherAutoSwitchOnRelease: boolean;
   initialSwitcherOpenedAt: number;
   initialSwitcherModifierReleased: boolean;
+  initialSwitcherReleaseKey: TabSwitcherReleaseKey | null;
 }
 
 export function Popup({
@@ -18,6 +20,7 @@ export function Popup({
   initialSwitcherAutoSwitchOnRelease,
   initialSwitcherOpenedAt,
   initialSwitcherModifierReleased,
+  initialSwitcherReleaseKey,
 }: PopupProps) {
   const surface = initialMode === 'tabs' ? 'tabs' : 'commands';
   const [cycleVersion, setCycleVersion] = useState(0);
@@ -48,6 +51,7 @@ export function Popup({
           autoSwitchOnRelease={initialSwitcherAutoSwitchOnRelease}
           openedAt={initialSwitcherOpenedAt}
           modifierReleasedAtOpen={initialSwitcherModifierReleased}
+          releaseKey={initialSwitcherReleaseKey}
           surface="popup"
           cycleVersion={cycleVersion}
         />

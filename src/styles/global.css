@@ -336,7 +336,9 @@ select:focus-visible {
   opacity: 1;
 }
 .search-input:focus-visible {
-  outline: 0;
+  outline: 2px solid var(--cc-focus);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 /* Brand tints come from searchProviders.ts as --provider-accent-light/-dark on each provider element. */
@@ -689,80 +691,27 @@ mark {
   display: none;
 }
 
-.result-actions-trigger {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  place-items: center;
-  min-width: 0;
-  overflow: hidden;
-  margin: -4px 0;
-  padding: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--cc-muted);
-  cursor: pointer;
-  transition:
-    width 160ms ease-out,
-    flex-basis 160ms ease-out,
-    opacity 140ms ease-out,
-    background-color 100ms ease,
-    color 100ms ease,
-    transform 160ms ease-out;
-}
-.result-actions-trigger svg {
+.result-actions-toolbar-trigger svg {
   display: block;
   width: 16px;
   height: 16px;
 }
-.result-actions-trigger[aria-expanded='true'] {
+.result-actions-toolbar-trigger[aria-expanded='true'] {
   background: color-mix(in srgb, var(--cc-text) 10%, transparent);
   color: var(--cc-text);
 }
-.result-actions-trigger:active {
+.result-actions-toolbar-trigger:active {
   transform: scale(0.92);
-}
-.result-row.has-actions .result-badge {
-  min-width: 0;
-  transition:
-    width 160ms ease-out,
-    max-width 160ms ease-out,
-    flex-basis 160ms ease-out,
-    padding 160ms ease-out,
-    opacity 140ms ease-out;
-}
-@media (hover: hover) {
-  .result-actions-trigger {
-    width: 0;
-    flex-basis: 0;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(5px);
-  }
-  .result-row:hover .result-actions-trigger,
-  .result-actions-trigger:focus-visible,
-  .result-actions-trigger[aria-expanded='true'] {
-    width: 28px;
-    flex-basis: 28px;
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0);
-  }
-  .result-actions-trigger:hover {
-    background: color-mix(in srgb, var(--cc-text) 10%, transparent);
-    color: var(--cc-text);
-  }
 }
 
 /* While the actions dock is open, the row it acts on stays clear and the rest of the bar recedes. */
 .command-center.has-action-dock .search-area {
   opacity: 0.8;
 }
-.command-center.has-action-dock .result-row:not(.is-actions-target) {
+.command-center.has-action-dock .result-row:not(.is-selected) {
   opacity: 0.55;
 }
-.result-row.is-actions-target {
+.command-center.has-action-dock .result-row.is-selected {
   border-color: color-mix(in srgb, var(--cc-accent) 40%, transparent);
 }
 /* The dock shares the results cell, so the auto-height overlay grows to fit it instead of clipping it. */
@@ -1631,13 +1580,13 @@ mark {
   gap: 8px;
 }
 .tab-switcher-panel {
-  display: grid;
+  display: flex;
   width: min(var(--tab-switcher-panel-width, 1440px), 88vw, calc(100vw - 48px));
   min-height: min(216px, calc(100dvh - 20px));
-  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: stretch;
   gap: 7px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 10px;
   border: 1px solid var(--cc-border);
   border-radius: 16px;
@@ -1645,6 +1594,8 @@ mark {
   color: var(--cc-text);
   box-shadow: var(--cc-shadow);
   pointer-events: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
   animation: surface-in 110ms ease-out both;
 }
 .tab-switcher-panel:focus-visible,
@@ -1657,8 +1608,9 @@ mark {
 }
 .tab-card {
   display: grid;
+  flex: 0 0 min(278px, calc(100vw - 72px));
   min-width: 0;
-  grid-template-rows: minmax(0, 1fr) 25px;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 7px;
   padding: 6px;
   border: 1px solid var(--cc-border);
@@ -1666,6 +1618,7 @@ mark {
   background: var(--cc-panel);
   color: var(--cc-text);
   cursor: pointer;
+  scroll-snap-align: start;
   text-align: left;
   user-select: none;
   transition:
@@ -1679,6 +1632,15 @@ mark {
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--cc-accent) 22%, transparent),
     0 6px 14px color-mix(in srgb, var(--cc-accent) 12%, transparent);
+}
+.tab-card.is-selected .tab-card-label {
+  align-items: flex-start;
+}
+.tab-card.is-selected .tab-card-title {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 .tab-card-preview {
   position: relative;
@@ -1913,7 +1875,7 @@ mark {
     padding: 6px;
   }
   .cc-overlay-stage .tab-card {
-    grid-template-rows: minmax(0, 1fr) 22px;
+    grid-template-rows: minmax(0, 1fr) auto;
     gap: 4px;
     padding: 4px;
   }
@@ -1980,7 +1942,7 @@ body:has(.cc-root > .tab-switcher-overlay),
   .provider-hint:active:not(:disabled),
   .provider-candidate:active:not(:disabled),
   .option-card:active:not(:disabled),
-  .result-actions-trigger:active,
+  .result-actions-toolbar-trigger:active,
   .notice-dismiss:active:not(:disabled) {
     transform: none;
   }

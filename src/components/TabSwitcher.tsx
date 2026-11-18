@@ -33,7 +33,6 @@ export function TabSwitcher(props: TabSwitcherProps) {
           style={
             {
               '--tab-switcher-panel-width': `${model.panelWidth}px`,
-              gridTemplateColumns: `repeat(${model.cardCount}, minmax(0, 1fr))`,
             } as CSSProperties
           }
         >

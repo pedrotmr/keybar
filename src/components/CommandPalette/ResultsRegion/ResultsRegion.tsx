@@ -33,7 +33,6 @@ interface ResultsRegionHandlerProps {
   onItemClick: (index: number) => void;
   onItemHover: (index: number) => void;
   onItemContextMenu: (index: number) => boolean;
-  onItemActions: (index: number, fromKeyboard: boolean) => void;
   onDismissActionDock: () => void;
 }
 
@@ -62,7 +61,6 @@ export function ResultsRegion({
   onItemClick,
   onItemHover,
   onItemContextMenu,
-  onItemActions,
   onDismissActionDock,
 }: ResultsRegionProps) {
   return (
@@ -81,10 +79,6 @@ export function ResultsRegion({
         onItemClick={onItemClick}
         onItemHover={onItemHover}
         onItemContextMenu={onItemContextMenu}
-        hasItemActions={(item) => item.type === 'tab'}
-        onItemActions={onItemActions}
-        openActionsIndex={actionDock ? actionDockIndex : undefined}
-        actionsMenuId={actionsMenuId}
       />
       {actionDock && actionDockTab && actionDockIndex >= 0 && (
         <ActionDock

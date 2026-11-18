@@ -40,13 +40,17 @@ export function CommandPalette(props: CommandPaletteProps) {
             query={model.query}
             inputRef={model.inputRef}
             selectedItem={model.selectedItem}
+            scopeAnnouncement={model.scopeAnnouncement}
             hasSelectedTab={model.selectedItem?.type === 'tab' && Boolean(model.selectedTab)}
             showResults={model.showResults}
             resultsLength={model.results.length}
+            actionDockId={model.actionDockId}
+            actionDockOpen={Boolean(model.actionDock && model.actionDockIndex === model.activeIndex)}
             onQueryChange={model.handleQueryChange}
             onSearchKeyDown={model.handleSearchKeyDown}
             onReturnToCommandSearch={model.returnToCommandSearch}
             onActivateProvider={model.activateSuggestedProvider}
+            onOpenSelectedActions={(fromKeyboard) => model.toggleActionDock(model.activeIndex, fromKeyboard)}
             onOpenSettings={() => model.changeMode('settings')}
           />
           {model.showResults && (
@@ -68,7 +72,6 @@ export function CommandPalette(props: CommandPaletteProps) {
               onItemClick={model.handleResultClick}
               onItemHover={model.handleResultHover}
               onItemContextMenu={model.handleResultContextMenu}
-              onItemActions={model.toggleActionDock}
               onDismissActionDock={() => model.closeActionDock()}
             />
           )}

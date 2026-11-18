@@ -6,12 +6,13 @@ import styleText from '@/styles/global.css?inline';
 mountOverlaySurface(
   'tabs',
   styleText,
-  ({ onClose, autoSwitchOnRelease, openedAt, modifierReleasedAtOpen, cycleVersion }) =>
+  ({ onClose, autoSwitchOnRelease, openedAt, modifierReleasedAtOpen, releaseKey, cycleVersion }) =>
     createElement(TabSwitcher, {
       onClose,
       autoSwitchOnRelease,
       openedAt,
       modifierReleasedAtOpen,
+      releaseKey,
       surface: 'overlay',
       cycleVersion,
     }),

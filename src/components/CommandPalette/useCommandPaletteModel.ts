@@ -51,6 +51,7 @@ export const useCommandPaletteModel = ({
   const [mode, setMode] = useState<CommandPaletteMode>(initialMode);
   const [query, setQuery] = useState('');
   const [activeProvider, setActiveProvider] = useState<SearchProviderDefinition | null>(null);
+  const [scopeAnnouncement, setScopeAnnouncement] = useState('');
   const providerOriginQuery = useRef('');
 
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -713,6 +714,7 @@ export const useCommandPaletteModel = ({
   const activateProvider = (provider: SearchProviderDefinition, nextQuery = ''): void => {
     providerOriginQuery.current = query;
     setActiveProvider(provider);
+    setScopeAnnouncement(`Switched to ${provider.name} search. Type a query to search.`);
     setQuery(nextQuery);
     setSelectedIndex(0);
     inputRef.current?.focus({ preventScroll: true });
@@ -724,6 +726,7 @@ export const useCommandPaletteModel = ({
 
   const returnToCommandSearch = (): void => {
     setActiveProvider(null);
+    setScopeAnnouncement('Returned to Command Bar search.');
     setQuery(providerOriginQuery.current);
     setSelectedIndex(0);
     inputRef.current?.focus({ preventScroll: true });
@@ -1199,7 +1202,7 @@ export const useCommandPaletteModel = ({
       (event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
       results.length &&
       event.target instanceof Element &&
-      event.target.closest('.result-actions-trigger')
+      event.target.closest('.result-actions-toolbar-trigger')
     ) {
       // From a row's actions button, arrows go back to moving the selection from the search field.
       event.preventDefault();
@@ -1323,6 +1326,7 @@ export const useCommandPaletteModel = ({
     preferences,
     query,
     activeProvider,
+    scopeAnnouncement,
     providerCandidate,
     providerCandidates,
     inputRef,

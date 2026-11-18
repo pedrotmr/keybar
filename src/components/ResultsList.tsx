@@ -20,10 +20,6 @@ export function ResultsList({
   onItemClick,
   onItemHover,
   onItemContextMenu,
-  hasItemActions,
-  onItemActions,
-  openActionsIndex,
-  actionsMenuId,
 }: ResultsListProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -66,10 +62,6 @@ export function ResultsList({
             onItemClick={onItemClick}
             onItemHover={onItemHover}
             onItemContextMenu={onItemContextMenu}
-            hasItemActions={hasItemActions}
-            onItemActions={onItemActions}
-            openActionsIndex={openActionsIndex}
-            actionsMenuId={actionsMenuId}
           />
         ))}
       </div>

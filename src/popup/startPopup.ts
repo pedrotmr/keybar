@@ -14,6 +14,7 @@ import { installProductFont } from '@/utils/installProductFont';
 import {
   installTabSwitcherKeyReleaseMonitor,
   wasTabSwitcherModifierReleasedAfter,
+  type TabSwitcherReleaseKey,
 } from '@/utils/tabSwitcherKeyRelease';
 import { consumePopupLaunchIntent, parsePopupLaunchFallback } from '@/utils/popupLaunchIntent';
 
@@ -105,6 +106,7 @@ export const startPopup = async (): Promise<void> => {
 
   let switcherAutoSwitchOnRelease = fallbackIntent?.autoSwitchOnRelease ?? false;
   let switcherModifierReleased = false;
+  let switcherReleaseKey: TabSwitcherReleaseKey | null = fallbackIntent?.releaseKey ?? null;
   let switcherOpenedAt = fallbackIntent?.openedAt ?? 0;
   let storedMode: string | null = fallbackIntent?.mode ?? null;
   let initialTheme: ThemePreferences = cachedTheme;
@@ -117,13 +119,15 @@ export const startPopup = async (): Promise<void> => {
 
     storedMode = launchIntent.mode ?? storedMode;
     switcherAutoSwitchOnRelease = launchIntent.autoSwitchOnRelease ?? false;
+    switcherReleaseKey = launchIntent.releaseKey ?? switcherReleaseKey;
 
     if (launchIntent.openedAt !== undefined) {
       popupRequestedAt = launchIntent.openedAt;
     }
 
     switcherOpenedAt = popupRequestedAt ?? 0;
-    switcherModifierReleased = switcherAutoSwitchOnRelease && wasTabSwitcherModifierReleasedAfter(switcherOpenedAt);
+    switcherModifierReleased =
+      switcherAutoSwitchOnRelease && wasTabSwitcherModifierReleasedAfter(switcherOpenedAt, switcherReleaseKey);
     initialTheme = normalizeThemePreferences(themeValues[themePreferencesStorageKey] ?? defaultThemePreferences);
   } catch {
     // Cached appearance and the normal command mode keep the popup usable if storage is unavailable.
@@ -147,6 +151,7 @@ export const startPopup = async (): Promise<void> => {
         initialSwitcherAutoSwitchOnRelease: switcherAutoSwitchOnRelease,
         initialSwitcherOpenedAt: switcherOpenedAt,
         initialSwitcherModifierReleased: switcherModifierReleased,
+        initialSwitcherReleaseKey: switcherReleaseKey,
       }),
     ),
   );

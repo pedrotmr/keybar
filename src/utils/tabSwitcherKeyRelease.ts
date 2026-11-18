@@ -1,5 +1,7 @@
+export type TabSwitcherReleaseKey = 'Meta' | 'Control' | 'Alt';
+
 interface KeyReleaseState {
-  lastModifierReleaseAt: number;
+  releaseAtByKey?: Partial<Record<TabSwitcherReleaseKey, number>>;
 }
 
 declare global {
@@ -9,24 +11,47 @@ declare global {
 }
 
 export const isTabSwitcherModifierKey = (key: string): key is 'Meta' | 'Control' | 'Alt' => {
-  // Chrome lets users customize extension shortcuts, so the modifier may differ
-  // from the operating system's suggested shortcut.
   return key === 'Meta' || key === 'Control' || key === 'Alt';
 };
 
+export const getTabSwitcherReleaseKeyFromShortcut = (
+  shortcut: string | null | undefined,
+): TabSwitcherReleaseKey | null => {
+  if (!shortcut) {
+    return null;
+  }
+
+  for (const token of shortcut.split('+').map((part) => part.trim().toLowerCase())) {
+    if (token === 'command' || token === 'cmd' || token === 'meta') {
+      return 'Meta';
+    }
+
+    if (token === 'ctrl' || token === 'control' || token === 'macctrl') {
+      return 'Control';
+    }
+
+    if (token === 'alt' || token === 'option') {
+      return 'Alt';
+    }
+  }
+
+  return null;
+};
+
 export const installTabSwitcherKeyReleaseMonitorInPage = (): void => {
-  if (window.__keybarKeyReleaseState) {
+  if (window.__keybarKeyReleaseState?.releaseAtByKey) {
     return;
   }
 
-  const state: KeyReleaseState = { lastModifierReleaseAt: 0 };
+  const releaseAtByKey: Partial<Record<TabSwitcherReleaseKey, number>> = {};
+  const state: KeyReleaseState = { releaseAtByKey };
   window.__keybarKeyReleaseState = state;
 
   window.addEventListener(
     'keyup',
     (event: KeyboardEvent) => {
       if (event.isTrusted && (event.key === 'Meta' || event.key === 'Control' || event.key === 'Alt')) {
-        state.lastModifierReleaseAt = Date.now();
+        releaseAtByKey[event.key] = Date.now();
       }
     },
     true,
@@ -37,11 +62,14 @@ export const installTabSwitcherKeyReleaseMonitor = (): void => {
   installTabSwitcherKeyReleaseMonitorInPage();
 };
 
-export const wasTabSwitcherModifierReleasedAfter = (startedAt: number | null | undefined): boolean => {
-  if (!startedAt) {
+export const wasTabSwitcherModifierReleasedAfter = (
+  startedAt: number | null | undefined,
+  releaseKey: TabSwitcherReleaseKey | null | undefined,
+): boolean => {
+  if (!startedAt || !releaseKey) {
     return false;
   }
 
   installTabSwitcherKeyReleaseMonitor();
-  return (window.__keybarKeyReleaseState?.lastModifierReleaseAt ?? 0) >= startedAt;
+  return (window.__keybarKeyReleaseState?.releaseAtByKey?.[releaseKey] ?? 0) >= startedAt;
 };

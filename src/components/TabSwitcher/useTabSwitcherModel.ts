@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { sendBackground } from '@/utils/chromeHelpers';
 import type { ManagedTab } from '@/utils/tabItems';
-import { isTabSwitcherModifierKey, wasTabSwitcherModifierReleasedAfter } from '@/utils/tabSwitcherKeyRelease';
+import { wasTabSwitcherModifierReleasedAfter } from '@/utils/tabSwitcherKeyRelease';
 import { optionId } from './helpers';
 import type { TabSwitcherProps } from './types';
 
@@ -18,6 +18,7 @@ export const useTabSwitcherModel = ({
   autoSwitchOnRelease = false,
   openedAt = 0,
   modifierReleasedAtOpen = false,
+  releaseKey = null,
   surface = 'popup',
   cycleVersion = 0,
 }: TabSwitcherProps) => {
@@ -189,6 +190,24 @@ export const useTabSwitcherModel = ({
   }, [selectedTab]);
 
   useLayoutEffect(() => {
+    const panel = listboxRef.current;
+    const selectedCard = panel?.querySelector<HTMLElement>('[aria-selected="true"]');
+
+    if (!panel || !selectedCard) {
+      return;
+    }
+
+    const panelBounds = panel.getBoundingClientRect();
+    const cardBounds = selectedCard.getBoundingClientRect();
+
+    if (cardBounds.left < panelBounds.left) {
+      panel.scrollLeft -= panelBounds.left - cardBounds.left;
+    } else if (cardBounds.right > panelBounds.right) {
+      panel.scrollLeft += cardBounds.right - panelBounds.right;
+    }
+  }, [selectedIndex, tabs]);
+
+  useLayoutEffect(() => {
     cycleVersionRef.current = cycleVersion;
   }, [cycleVersion]);
 
@@ -205,12 +224,12 @@ export const useTabSwitcherModel = ({
       return;
     }
 
-    if (modifierReleasedAtOpen || wasTabSwitcherModifierReleasedAfter(openedAt)) {
+    if (modifierReleasedAtOpen || wasTabSwitcherModifierReleasedAfter(openedAt, releaseKey)) {
       modifierReleasedRef.current = true;
     }
 
     const onKeyUp = (event: globalThis.KeyboardEvent) => {
-      if (!event.isTrusted || !isTabSwitcherModifierKey(event.key)) {
+      if (!event.isTrusted || !releaseKey || event.key !== releaseKey) {
         return;
       }
 
@@ -221,7 +240,7 @@ export const useTabSwitcherModel = ({
 
     window.addEventListener('keyup', onKeyUp, true);
     return () => window.removeEventListener('keyup', onKeyUp, true);
-  }, [autoSwitchOnRelease, openedAt, modifierReleasedAtOpen]);
+  }, [autoSwitchOnRelease, openedAt, modifierReleasedAtOpen, releaseKey]);
 
   useEffect(() => {
     let mounted = true;

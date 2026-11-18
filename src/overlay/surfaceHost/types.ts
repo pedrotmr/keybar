@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Root } from 'react-dom/client';
 import type { ThemePreferences } from '@/types';
+import type { TabSwitcherReleaseKey } from '@/utils/tabSwitcherKeyRelease';
 
 export type OverlaySurface = 'commands' | 'tabs';
 
@@ -14,6 +15,7 @@ interface SurfaceActivationState {
   autoSwitchOnRelease: boolean;
   openedAt: number;
   modifierReleasedAtOpen: boolean;
+  releaseKey: TabSwitcherReleaseKey | null;
   cycleVersion: number;
 }
 
@@ -46,7 +48,7 @@ interface SurfaceControllerLifecycle {
 export interface SurfaceController extends SurfaceControllerMount, SurfaceControllerFocus, SurfaceControllerLifecycle {}
 
 interface SurfaceOpenHandlers {
-  openHandler?: (autoSwitchOnRelease: boolean, openedAt: number) => void;
+  openHandler?: (autoSwitchOnRelease: boolean, openedAt: number, releaseKey: TabSwitcherReleaseKey | null) => void;
   closeHandler?: (switching: boolean) => void;
   cycleHandler?: (cycles: number) => void;
 }
@@ -60,6 +62,7 @@ interface SurfacePendingState {
   pendingOpen: boolean;
   pendingAutoSwitchOnRelease: boolean;
   pendingOpenedAt: number;
+  pendingReleaseKey: TabSwitcherReleaseKey | null;
   pendingClose: boolean;
   pendingSwitching: boolean;
   pendingCycles: number;
@@ -73,6 +76,7 @@ export interface OpenRequest {
   switching?: boolean;
   autoSwitchOnRelease?: boolean;
   openedAt?: number;
+  releaseKey?: TabSwitcherReleaseKey | null;
   cycles?: number;
 }
 
