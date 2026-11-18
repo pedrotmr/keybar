@@ -103,6 +103,7 @@ export function ResultsList({
                 item={item}
                 index={index}
                 selected={index === selectedIndex}
+                actionsVisible={hoveredActionId === item.id || index === openActionsIndex}
                 query={query}
                 providerSearchMode={providerSearchMode}
                 onItemClick={onItemClick}
@@ -133,6 +134,16 @@ export function ResultsList({
                       onMouseEnter={() => {
                         setHoveredActionId(item.id);
                         onItemHover(index);
+                      }}
+                      onFocus={() => setHoveredActionId(item.id)}
+                      onBlur={(event) => {
+                        const relatedTarget = event.relatedTarget;
+                        const nextAction =
+                          relatedTarget instanceof Element
+                            ? relatedTarget.closest<HTMLButtonElement>('.result-actions-trigger')
+                            : null;
+
+                        setHoveredActionId(nextAction?.dataset.resultId ?? null);
                       }}
                       onMouseLeave={(event) => {
                         const relatedTarget = event.relatedTarget;

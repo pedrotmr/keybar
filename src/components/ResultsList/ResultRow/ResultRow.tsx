@@ -7,6 +7,7 @@ export function ResultRow({
   item,
   index,
   selected,
+  actionsVisible,
   query,
   providerSearchMode,
   onItemClick,
@@ -22,7 +23,7 @@ export function ResultRow({
     <div
       id={resultDomId(item.id)}
       data-result-id={item.id}
-      className={`result-row${selected ? ' is-selected' : ''}${item.type === 'tab' && item.current ? ' is-active-tab' : ''}${hasActions ? ' has-actions' : ''}`}
+      className={`result-row${selected ? ' is-selected' : ''}${item.type === 'tab' && item.current ? ' is-active-tab' : ''}${hasActions ? ' has-actions' : ''}${hasActions && actionsVisible ? ' is-actions-visible' : ''}`}
       role="option"
       aria-selected={selected}
       aria-label={item.type === 'tab' ? optionLabel(item, details, badge) : undefined}

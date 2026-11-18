@@ -570,6 +570,7 @@ kbd {
   display: grid;
   width: 28px;
   height: 28px;
+  overflow: hidden;
   place-items: center;
   padding: 0;
   border-radius: 7px;
@@ -578,8 +579,9 @@ kbd {
   cursor: pointer;
   pointer-events: auto;
   transition:
-    opacity 120ms ease-out,
-    transform 120ms ease-out,
+    width 160ms ease-out,
+    opacity 140ms ease-out,
+    transform 160ms ease-out,
     background-color 100ms ease-out,
     color 100ms ease-out;
 }
@@ -597,13 +599,21 @@ kbd {
 }
 @media (hover: hover) {
   .result-actions-trigger {
+    width: 0;
     opacity: 0;
     pointer-events: none;
     transform: translateX(5px);
   }
+  .result-row.has-actions {
+    padding-inline-end: 20px;
+  }
+  .result-row.has-actions.is-actions-visible {
+    padding-inline-end: 48px;
+  }
   .result-actions-trigger.is-hovered,
   .result-actions-trigger:focus-visible,
   .result-actions-trigger[aria-expanded='true'] {
+    width: 28px;
     opacity: 1;
     pointer-events: auto;
     transform: translateX(0);
@@ -614,8 +624,11 @@ kbd {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .result-actions-trigger {
+  .result-actions-trigger,
+  .result-row.has-actions {
     transition: none;
+  }
+  .result-actions-trigger {
     transform: none;
   }
 }
@@ -648,7 +661,8 @@ kbd {
   user-select: none;
   transition:
     background-color 120ms ease-out,
-    opacity 180ms ease-out;
+    opacity 180ms ease-out,
+    padding-inline-end 160ms ease-out;
 }
 .result-icon-wrap {
   display: grid;

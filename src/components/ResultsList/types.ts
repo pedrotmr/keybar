@@ -49,6 +49,7 @@ interface ResultRowDataProps {
   item: PaletteItem;
   index: number;
   selected: boolean;
+  actionsVisible: boolean;
   query: string;
   providerSearchMode: boolean;
 }
