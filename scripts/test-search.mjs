@@ -25,9 +25,13 @@ const {
   findProviderQueryMatch,
   findSearchProvider,
   findSearchProviders,
+  getSearchProviderSuggestions,
   parseProviderQuery,
   searchProviders,
 } = await server.ssrLoadModule('/src/utils/searchProviders.ts');
+const { ProviderGlyph } = await server.ssrLoadModule('/src/components/ProviderIcon/ProviderGlyph.tsx');
+const { providerAccentStyle } = await server.ssrLoadModule('/src/components/ProviderIcon.tsx');
+const { getEmptyState } = await server.ssrLoadModule('/src/components/CommandPalette/helpers.ts');
 const { initialCommandItems, toTabItems } = await server.ssrLoadModule('/src/utils/tabItems.ts');
 const {
   installTabSwitcherKeyReleaseMonitor,
@@ -681,10 +685,16 @@ test('search ranking and navigation behavior', async () => {
       'youtube',
       'short provider aliases remain available through the Tab activation shortcut',
     );
-    assert.equal(findSearchProvider('go')?.id, 'google', 'the original Google Tab alias is preserved');
+    assert.equal(findSearchProvider('go')?.id, 'google', 'the exact Google alias wins over the Maps name prefix');
+    assert.equal(findSearchProvider('google')?.id, 'google', 'the exact Google name wins over the Maps name prefix');
+    assert.deepEqual(
+      getSearchProviderSuggestions('go').map((provider) => provider.id),
+      ['google'],
+      'an exact alias keeps the existing Google choice ahead of Maps name prefixes',
+    );
     assert.deepEqual(
       findSearchProviders('g').map((provider) => provider.id),
-      ['google', 'chatgpt'],
+      ['google', 'google-maps', 'chatgpt'],
       'progressive prefix collisions remain visible to callers',
     );
     assert.equal(findSearchProvider('g')?.id, 'google', 'an exact canonical prefix wins over an alias collision');
@@ -716,24 +726,18 @@ test('search ranking and navigation behavior', async () => {
         }
       }
     }
-    const googleMaps = {
-      ...searchProviders[0],
-      id: 'google-maps',
-      name: 'Google Maps',
-      prefix: 'gm',
-      aliases: ['gm', 'ma', 'maps'],
-      urlTemplate: 'https://www.google.com/maps/search/%s',
-    };
+    const googleMaps = searchProviders.find((provider) => provider.id === 'google-maps');
+    assert.ok(googleMaps, 'Google Maps is registered in the production provider registry');
     const appleMaps = {
-      ...searchProviders[0],
+      ...googleMaps,
       id: 'apple-maps',
       name: 'Apple Maps',
       prefix: 'amaps',
       aliases: ['amaps', 'ma', 'maps'],
       urlTemplate: 'https://maps.apple.com/?q=%s',
     };
-    const mapsRegistry = [searchProviders[0], googleMaps];
-    const ambiguousMapsRegistry = [searchProviders[0], googleMaps, appleMaps];
+    const mapsRegistry = searchProviders;
+    const ambiguousMapsRegistry = [...searchProviders, appleMaps];
     for (const alias of ['gm', 'ma', 'map', 'maps', 'google maps']) {
       assert.equal(
         findSearchProvider(alias, mapsRegistry)?.id,
@@ -745,6 +749,55 @@ test('search ranking and navigation behavior', async () => {
       findProviderQueryMatch('Google Maps', mapsRegistry),
       null,
       'a full compound provider name alone remains a suggestion rather than a query',
+    );
+    assert.equal(
+      parseProviderQuery('Google Maps', mapsRegistry),
+      null,
+      'a standalone compound provider name never becomes a shorter provider search',
+    );
+    assert.equal(
+      searchItems([], 'Google Maps', false, false).some((item) => item.id === 'search-google'),
+      false,
+      'a standalone Maps name does not create a Google search action for the word Maps',
+    );
+    const partialMapsMatch = findProviderQueryMatch('Google Ma', mapsRegistry);
+    assert.deepEqual(
+      partialMapsMatch?.providers.map((provider) => provider.id),
+      ['google-maps'],
+      'partial compound names surface the matching provider while typing',
+    );
+    assert.equal(
+      partialMapsMatch?.query,
+      '',
+      'partial compound names do not treat their typed trigger as the Maps query',
+    );
+    assert.equal(
+      partialMapsMatch?.preserveFullQueryFallback,
+      true,
+      'partial compound names keep the full text available to ordinary search',
+    );
+    assert.equal(parseProviderQuery('Google Map lunch', mapsRegistry), null);
+    assert.equal(
+      findProviderQueryMatch('Google Map lunch', mapsRegistry)?.query,
+      'lunch',
+      'a partial compound trigger followed by a query keeps the remaining query available',
+    );
+    assert.equal(
+      searchItems([], 'Google Ma', false, true).find((item) => item.id === 'search-google')?.title,
+      'Search Google for “Google Ma”',
+      'partial compound suggestions keep the normal full-query Google search',
+    );
+    const googleAliasQuery = findProviderQueryMatch('go lunch', mapsRegistry);
+    assert.deepEqual(
+      googleAliasQuery?.providers.map((provider) => provider.id),
+      ['google'],
+      'an exact Google alias keeps its choice when a query follows',
+    );
+    assert.equal(googleAliasQuery?.provider, null, 'a noncanonical Google alias still requires explicit selection');
+    assert.equal(
+      getEmptyState(googleMaps, null, '')?.detail,
+      'Press Tab to search Google Maps.',
+      'provider empty-state guidance only advertises the supported Tab activation',
     );
     assert.equal(
       parseProviderQuery('google maps lunch', mapsRegistry)?.provider.id,
@@ -782,6 +835,23 @@ test('search ranking and navigation behavior', async () => {
       'lunch spots',
       'a unique Google Maps trigger preserves the full query',
     );
+    assert.equal(
+      createProviderSearchItem(googleMaps, 'coffee & tea').url,
+      'https://www.google.com/maps/search/?api=1&query=coffee%20%26%20tea',
+      'Google Maps handoff URLs encode the full query safely',
+    );
+    assert.equal(
+      createProviderSearchItem(googleMaps, '..').url,
+      'https://www.google.com/maps/search/?api=1&query=..',
+      'Google Maps preserves dot queries in the query parameter instead of normalizing them as path segments',
+    );
+    const mapsGlyph = ProviderGlyph({ id: googleMaps.id });
+    assert.equal(mapsGlyph.type, 'svg', 'Google Maps has a local provider icon');
+    assert.equal(mapsGlyph.props.stroke, 'var(--provider-accent)', 'the map glyph uses its provider accent color');
+    assert.deepEqual(providerAccentStyle(googleMaps), {
+      '--provider-accent-light': '#1a73e8',
+      '--provider-accent-dark': '#8ab4f8',
+    });
     assert.equal(
       findProviderQueryMatch('YoUt cats in hats')?.query,
       'cats in hats',

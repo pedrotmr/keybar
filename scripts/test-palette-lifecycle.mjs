@@ -203,6 +203,34 @@ test('command palette lifecycle', async () => {
     await act(async () => model.handleQueryChange('Composing text'));
     await act(async () => model.handleSurfaceEscape(keyEvent('Escape', true)));
     assert.equal(model.query, 'Composing text', 'IME cancellation cannot reset the search');
+    await act(async () => model.handleQueryChange('yt'));
+    assert.ok(
+      !model.results.some((item) => item.id === 'search-saved-pages'),
+      'a standalone provider shortcut does not select the saved-pages permission action',
+    );
+    await act(async () => model.handleQueryChange('you are here'));
+    assert.deepEqual(
+      model.providerCandidates.map((provider) => provider.id),
+      ['youtube'],
+      'ordinary text can still expose a provider suggestion without committing to it',
+    );
+    assert.ok(model.results.some((item) => item.id === 'search-google'));
+    assert.ok(
+      model.results.some((item) => item.id === 'search-saved-pages'),
+      'provider suggestions do not hide the existing saved-pages search action',
+    );
+    await act(async () => model.handleQueryChange('Google Ma'));
+    assert.deepEqual(
+      model.providerCandidates.map((provider) => provider.id),
+      ['google-maps'],
+    );
+    assert.ok(
+      model.results.some((item) => item.id === 'search-google'),
+      'a partial Maps name retains the ordinary Google fallback',
+    );
+    await act(async () => model.handleSearchKeyDown(keyEvent('Tab')));
+    assert.equal(model.activeProvider?.id, 'google-maps');
+    assert.equal(model.query, '', 'selecting a partial Maps name starts with a clean provider query');
     await unmount(keyboardEnv);
 
     const savedRequests = { bookmarks: [], history: [] };

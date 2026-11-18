@@ -16,12 +16,7 @@ import { getCommands } from '@/utils/commands';
 import { bulkCloseTabIds, isBulkCloseAction } from '@/utils/bulkClose';
 import { normalizeNavigationUrl, sendBackground } from '@/utils/chromeHelpers';
 import { writeClipboardText } from '@/utils/clipboard';
-import {
-  findProviderQueryMatch,
-  findSearchProvider,
-  findSearchProviders,
-  parseProviderQuery,
-} from '@/utils/searchProviders';
+import { findProviderQueryMatch, getSearchProviderSuggestions, parseProviderQuery } from '@/utils/searchProviders';
 import type { SearchProviderDefinition } from '@/utils/searchProviders';
 import { isTabInSplitView } from '@/utils/splitViews';
 import { TAB_GROUP_ID_NONE } from '@/utils/chromeApiConstants';
@@ -315,11 +310,7 @@ export const useCommandPaletteModel = ({
       return providerQueryMatch.provider ? [] : providerQueryMatch.providers;
     }
 
-    const matches = findSearchProviders(query);
-    if (!matches.length) return [];
-
-    const resolved = findSearchProvider(query);
-    return resolved ? [resolved] : matches;
+    return getSearchProviderSuggestions(query);
   }, [mode, query, activeProvider, providerQueryMatch]);
 
   const providerCandidate = providerCandidates.length === 1 ? providerCandidates[0] : null;
@@ -347,14 +338,18 @@ export const useCommandPaletteModel = ({
     }
 
     const start = performance.now();
-    const allowFallback = !localDataLoading && (providerCandidates.length === 0 || Boolean(providerQueryMatch?.query));
+    const allowFallback =
+      !localDataLoading &&
+      (providerCandidates.length === 0 ||
+        Boolean(providerQueryMatch?.query || providerQueryMatch?.preserveFullQueryFallback));
     const searchableItems = !query.trim() && mode === 'commands' ? initialItems : sourceItems;
     const found = findPaletteResults(activeProvider, query, mode, searchableItems, allowFallback);
 
     if (
       savedSearchPrompt &&
       !activeProvider &&
-      !providerCandidates.length &&
+      (!providerCandidates.length ||
+        Boolean(providerQueryMatch?.query || providerQueryMatch?.preserveFullQueryFallback)) &&
       !parseProviderQuery(query) &&
       !normalizeNavigationUrl(query)
     ) {

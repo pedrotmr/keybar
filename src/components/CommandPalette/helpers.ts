@@ -170,7 +170,7 @@ export const getEmptyState = (
   if (providerCandidate) {
     return {
       title: `${providerCandidate.verb} ${providerCandidate.name}`,
-      detail: `Press Tab or Enter to ${providerCandidate.verb.toLowerCase()} ${providerCandidate.name}.`,
+      detail: `Press Tab to ${providerCandidate.verb.toLowerCase()} ${providerCandidate.name}.`,
       providerId: providerCandidate.id,
     };
   }

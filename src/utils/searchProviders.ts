@@ -36,6 +36,8 @@ export interface ProviderQueryMatch {
   providers: SearchProviderDefinition[];
   provider: SearchProviderDefinition | null;
   query: string;
+  // A partial compound name has no provider query yet, but ordinary search should still see the full input.
+  preserveFullQueryFallback?: boolean;
 }
 
 // Providers open their public search/composer pages; this registry does not call private APIs or scrape results.
@@ -47,6 +49,16 @@ export const searchProviders: SearchProviderDefinition[] = [
     aliases: ['g', 'go', 'goo', 'google'],
     urlTemplate: 'https://www.google.com/search?q=%s',
     hint: 'Search the web',
+    verb: 'Search',
+    accent: { light: '#1a73e8', dark: '#8ab4f8' },
+  },
+  {
+    id: 'google-maps',
+    name: 'Google Maps',
+    prefix: 'gm',
+    aliases: ['gm', 'ma', 'maps'],
+    urlTemplate: 'https://www.google.com/maps/search/?api=1&query=%s',
+    hint: 'Search places and addresses',
     verb: 'Search',
     accent: { light: '#1a73e8', dark: '#8ab4f8' },
   },
@@ -136,6 +148,45 @@ const getProviderTriggers = (provider: SearchProviderDefinition): Set<string> =>
     ...provider.name.split(/\s+/).flatMap(expandProviderTrigger),
   ]);
 
+interface ProviderTriggerIndexEntry {
+  provider: SearchProviderDefinition;
+  triggers: Set<string>;
+}
+
+const createProviderTriggerIndex = (providers: SearchProviderDefinition[]): ProviderTriggerIndexEntry[] =>
+  providers.map((provider) => ({ provider, triggers: getProviderTriggers(provider) }));
+
+const findProvidersMatchingTrigger = (
+  alias: string,
+  index: ProviderTriggerIndexEntry[],
+): SearchProviderDefinition[] => {
+  const normalized = normalizeProviderTrigger(alias);
+
+  if (!normalized) {
+    return [];
+  }
+
+  return index
+    .filter(({ triggers }) => [...triggers].some((trigger) => trigger.startsWith(normalized)))
+    .map(({ provider }) => provider);
+};
+
+const findCompoundNamePrefixMatches = (
+  trigger: string,
+  providers: SearchProviderDefinition[],
+): SearchProviderDefinition[] => {
+  const normalized = normalizeProviderTrigger(trigger);
+
+  if (!normalized.includes(' ')) {
+    return [];
+  }
+
+  return providers.filter((provider) => {
+    const fullName = normalizeProviderTrigger(provider.name);
+    return fullName.includes(' ') && normalized.length < fullName.length && fullName.startsWith(normalized);
+  });
+};
+
 const resolveProviderTrigger = (
   trigger: string,
   providers: SearchProviderDefinition[],
@@ -145,9 +196,24 @@ const resolveProviderTrigger = (
   const canonicalMatches = providers.filter((provider) => normalizeProviderTrigger(provider.prefix) === normalized);
   const canonical = canonicalMatches.length === 1 ? canonicalMatches[0] : null;
 
-  // An exact registered prefix disambiguates an alias collision; other collisions need an explicit choice.
+  // Exact canonical prefixes, aliases, and names disambiguate their generated-prefix overlaps.
   if (canonical && candidates.some((provider) => provider.id === canonical.id)) {
     return canonical;
+  }
+
+  const explicitMatches = providers.filter(
+    (provider) =>
+      candidates.some((candidate) => candidate.id === provider.id) &&
+      (provider.aliases.some((alias) => normalizeProviderTrigger(alias) === normalized) ||
+        normalizeProviderTrigger(provider.name) === normalized),
+  );
+
+  if (explicitMatches.length === 1) {
+    return explicitMatches[0];
+  }
+
+  if (explicitMatches.length > 1) {
+    return null;
   }
 
   return candidates.length === 1 ? candidates[0] : null;
@@ -172,17 +238,7 @@ const findCommittedProvider = (
 export const findSearchProviders = (
   alias: string,
   providers: SearchProviderDefinition[] = searchProviders,
-): SearchProviderDefinition[] => {
-  const normalized = normalizeProviderTrigger(alias);
-
-  if (!normalized) {
-    return [];
-  }
-
-  return providers.filter((provider) =>
-    [...getProviderTriggers(provider)].some((trigger) => trigger.startsWith(normalized)),
-  );
-};
+): SearchProviderDefinition[] => findProvidersMatchingTrigger(alias, createProviderTriggerIndex(providers));
 
 export const findSearchProvider = (
   alias: string,
@@ -192,29 +248,71 @@ export const findSearchProvider = (
   return resolveProviderTrigger(alias, providers, candidates);
 };
 
+export const getSearchProviderSuggestions = (
+  alias: string,
+  providers: SearchProviderDefinition[] = searchProviders,
+): SearchProviderDefinition[] => {
+  const candidates = findSearchProviders(alias, providers);
+  const resolved = resolveProviderTrigger(alias, providers, candidates);
+  return resolved ? [resolved] : candidates;
+};
+
 export const findProviderQueryMatch = (
   input: string,
   providers: SearchProviderDefinition[] = searchProviders,
 ): ProviderQueryMatch | null => {
   const trimmedInput = input.trim();
   const normalizedInput = normalizeProviderTrigger(input);
+  const triggerIndex = createProviderTriggerIndex(providers);
 
-  if (providers.some((provider) => getProviderTriggers(provider).has(normalizedInput))) {
+  if (triggerIndex.some(({ triggers }) => triggers.has(normalizedInput))) {
     return null;
   }
 
-  const words = [...trimmedInput.matchAll(/\S+/g)];
+  const wholeInputNameMatches = findCompoundNamePrefixMatches(trimmedInput, providers);
+  if (wholeInputNameMatches.length) {
+    return {
+      trigger: trimmedInput,
+      providers: wholeInputNameMatches,
+      provider: null,
+      query: '',
+      preserveFullQueryFallback: true,
+    };
+  }
 
-  for (let triggerWordCount = words.length - 1; triggerWordCount > 0; triggerWordCount -= 1) {
+  const words = [...trimmedInput.matchAll(/\S+/g)];
+  const maxTriggerWordCount = Math.max(
+    1,
+    ...triggerIndex.flatMap(({ triggers }) => [...triggers].map((trigger) => trigger.split(' ').length)),
+  );
+
+  for (
+    let triggerWordCount = Math.min(words.length - 1, maxTriggerWordCount);
+    triggerWordCount > 0;
+    triggerWordCount -= 1
+  ) {
     const triggerEnd = (words[triggerWordCount - 1].index ?? 0) + words[triggerWordCount - 1][0].length;
     const trigger = trimmedInput.slice(0, triggerEnd);
     const query = trimmedInput.slice(triggerEnd).trim();
-    const candidates = findSearchProviders(trigger, providers);
+    const compoundNameMatches = findCompoundNamePrefixMatches(trigger, providers);
 
-    if (candidates.length) {
+    if (compoundNameMatches.length) {
       return {
         trigger,
-        providers: candidates,
+        providers: compoundNameMatches,
+        provider: null,
+        query: query || trimmedInput,
+      };
+    }
+
+    const candidates = findProvidersMatchingTrigger(trigger, triggerIndex);
+
+    if (candidates.length) {
+      const resolved = resolveProviderTrigger(trigger, providers, candidates);
+
+      return {
+        trigger,
+        providers: resolved ? [resolved] : candidates,
         provider: findCommittedProvider(trigger, providers),
         query,
       };
@@ -228,23 +326,10 @@ export const parseProviderQuery = (
   input: string,
   providers: SearchProviderDefinition[] = searchProviders,
 ): ParsedProviderQuery | null => {
-  const trimmedInput = input.trim();
-  const words = [...trimmedInput.matchAll(/\S+/g)];
+  const match = findProviderQueryMatch(input, providers);
 
-  // Only a registered canonical prefix or complete provider name commits an automatic handoff.
-  // Other aliases remain selectable suggestions so ordinary text is never rewritten or sent by surprise.
-  for (let triggerWordCount = words.length - 1; triggerWordCount > 0; triggerWordCount -= 1) {
-    const triggerEnd = (words[triggerWordCount - 1].index ?? 0) + words[triggerWordCount - 1][0].length;
-    const trigger = trimmedInput.slice(0, triggerEnd);
-    const query = trimmedInput.slice(triggerEnd).trim();
-    const provider = findCommittedProvider(trigger, providers);
-
-    if (provider && query) {
-      return { provider, query };
-    }
-  }
-
-  return null;
+  // A standalone provider trigger remains a suggestion; only a recognized trigger plus a query commits a handoff.
+  return match?.provider && match.query ? { provider: match.provider, query: match.query } : null;
 };
 
 export const createProviderSearchItem = (provider: SearchProviderDefinition, query: string): SearchItem => {
