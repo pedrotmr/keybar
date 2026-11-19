@@ -479,6 +479,14 @@ select:focus-visible {
   height: 14px;
   flex: 0 0 14px;
 }
+.provider-hint .provider-hint-icon img,
+.provider-hint .provider-hint-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.provider-hint .provider-hint-icon img {
+  transform: none;
+}
 .provider-candidates {
   display: flex;
   max-width: min(44vw, 240px);
