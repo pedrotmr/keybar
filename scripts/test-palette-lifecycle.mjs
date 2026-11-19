@@ -545,11 +545,71 @@ test('command palette lifecycle', async () => {
       resultRow.classList.contains('is-actions-visible'),
       'pointer exit preserves spacing while Actions has focus',
     );
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+    });
+    assert.ok(
+      !resultRow.classList.contains('is-actions-visible'),
+      'pointer interaction clears keyboard-only spacing after the action menu closes',
+    );
+    await act(async () => {
+      actionButton.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    assert.ok(
+      resultRow.classList.contains('is-actions-visible'),
+      'keyboard interaction restores spacing for the focused Actions control',
+    );
     await act(async () => actionButton.blur());
     assert.ok(
       !resultRow.classList.contains('is-actions-visible'),
       'row spacing collapses after pointer and focus leave',
     );
+    const actionShadowHost = document.createElement('div');
+    actionShadowHost.tabIndex = -1;
+    ui.appendChild(actionShadowHost);
+    const actionShadowRoot = actionShadowHost.attachShadow({ mode: 'open' });
+    const actionShadowMount = document.createElement('div');
+    actionShadowRoot.appendChild(actionShadowMount);
+    const actionShadowReactRoot = createRoot(actionShadowMount);
+    await act(async () =>
+      actionShadowReactRoot.render(
+        createElement(ResultsList, {
+          items: [renderedTab],
+          selectedIndex: 0,
+          keyboardNavigationVersion: 0,
+          highlightQuery: '',
+          mode: 'commands',
+          isBusy: false,
+          actionsMenuId: 'shadow-actions-menu',
+          onItemClick() {},
+          onItemHover() {},
+          onItemActions() {},
+        }),
+      ),
+    );
+    const shadowActionButton = actionShadowRoot.querySelector('.result-actions-trigger');
+    const shadowResultRow = actionShadowRoot.querySelector('.result-row');
+    assert.ok(shadowActionButton && shadowResultRow, 'row actions render inside the overlay shadow root');
+    await act(async () => shadowActionButton.focus());
+    assert.equal(document.activeElement, actionShadowHost, 'the closed page boundary exposes only the shadow host');
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+    });
+    assert.ok(
+      !shadowResultRow.classList.contains('is-actions-visible'),
+      'a pointer interaction inside the overlay clears keyboard-only spacing',
+    );
+    await act(async () => {
+      shadowActionButton.dispatchEvent(
+        new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }),
+      );
+    });
+    assert.ok(
+      shadowResultRow.classList.contains('is-actions-visible'),
+      'keyboard input on the focused shadow-root button restores its row spacing',
+    );
+    await act(async () => actionShadowReactRoot.unmount());
+    actionShadowHost.remove();
     await unmount(uiEnv);
 
     const switcherRuntimeEvent = event();

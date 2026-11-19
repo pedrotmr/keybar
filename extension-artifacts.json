@@ -16,6 +16,24 @@
   },
   "providerIcons": {
     "directory": "assets/provider-icons",
+    "sourceDirectory": "src/assets/provider-icons",
+    "sourceFiles": [
+      "claude.svg",
+      "google-maps.svg",
+      "google.svg",
+      "openai-dark.svg",
+      "openai-light.svg",
+      "perplexity.svg",
+      "x-dark.svg",
+      "x-light.svg",
+      "youtube.svg"
+    ],
+    "buildManifests": {
+      "main": ".vite/main-manifest.json",
+      "commands": ".vite/commands-manifest.json",
+      "tabs": ".vite/tabs-manifest.json"
+    },
+    "inventoryFile": "provider-icon-inventory.json",
     "webAccessibleResource": "assets/provider-icons/*.svg"
   },
   "fonts": {

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ResultsListProps } from './ResultsList/types';
 import { resultDomId } from './ResultsList/helpers';
 import { EmptyState } from './ResultsList/EmptyState/EmptyState';
@@ -28,9 +28,32 @@ export function ResultsList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const focusModeRef = useRef<'keyboard' | 'pointer'>('keyboard');
   const [hoveredActionId, setHoveredActionId] = useState<string | null>(null);
   const [focusedActionId, setFocusedActionId] = useState<string | null>(null);
   const [actionButtonTops, setActionButtonTops] = useState<number[]>([]);
+
+  useEffect(() => {
+    const handlePointerDown = (): void => {
+      focusModeRef.current = 'pointer';
+      setFocusedActionId(null);
+    };
+    const handleKeyDown = (): void => {
+      focusModeRef.current = 'keyboard';
+      const activeAction = document.activeElement?.closest<HTMLButtonElement>('.result-actions-trigger');
+      if (activeAction) {
+        setFocusedActionId(activeAction.dataset.resultId ?? null);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const scrollArea = scrollRef.current;
@@ -136,7 +159,15 @@ export function ResultsList({
                         setHoveredActionId(item.id);
                         onItemHover(index);
                       }}
-                      onFocus={() => setFocusedActionId(item.id)}
+                      onFocus={() => {
+                        if (focusModeRef.current === 'keyboard') {
+                          setFocusedActionId(item.id);
+                        }
+                      }}
+                      onKeyDown={() => {
+                        focusModeRef.current = 'keyboard';
+                        setFocusedActionId(item.id);
+                      }}
                       onBlur={(event) => {
                         const relatedTarget = event.relatedTarget;
                         const nextAction =
@@ -144,7 +175,9 @@ export function ResultsList({
                             ? relatedTarget.closest<HTMLButtonElement>('.result-actions-trigger')
                             : null;
 
-                        setFocusedActionId(nextAction?.dataset.resultId ?? null);
+                        setFocusedActionId(
+                          focusModeRef.current === 'keyboard' ? (nextAction?.dataset.resultId ?? null) : null,
+                        );
                       }}
                       onMouseLeave={(event) => {
                         const relatedTarget = event.relatedTarget;

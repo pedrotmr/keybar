@@ -436,6 +436,7 @@ test('initial tab result ordering and presentation', async () => {
     assert.equal(isTabSwitcherModifierKey('Shift'), false, 'Shift release alone does not activate the selected tab');
     assert.equal(getTabSwitcherReleaseKeyFromShortcut('Ctrl+A'), 'Control');
     assert.equal(getTabSwitcherReleaseKeyFromShortcut('MacCtrl+A'), 'Control');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('Strg+A'), 'Control');
     assert.equal(getTabSwitcherReleaseKeyFromShortcut('Command+T'), 'Meta');
     assert.equal(getTabSwitcherReleaseKeyFromShortcut('Alt+Shift+K'), 'Alt');
     assert.equal(getTabSwitcherReleaseKeyFromShortcut('⌃A'), 'Control');

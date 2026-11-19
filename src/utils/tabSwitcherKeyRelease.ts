@@ -34,7 +34,7 @@ export const getTabSwitcherReleaseKeyFromShortcut = (
       return 'Meta';
     }
 
-    if (token === 'ctrl' || token === 'control' || token === 'macctrl') {
+    if (token === 'ctrl' || token === 'control' || token === 'macctrl' || token === 'strg') {
       return 'Control';
     }
 

@@ -20,6 +20,7 @@ export function contentConfig(surface: 'commands' | 'tabs') {
     build: {
       outDir: 'dist',
       emptyOutDir: false,
+      manifest: artifacts.providerIcons.buildManifests[surface],
       cssCodeSplit: false,
       lib: {
         entry: path.resolve(__dirname, entry),

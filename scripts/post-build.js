@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { collectProviderIconInventory } from './provider-icon-assets.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +17,31 @@ const artifacts = JSON.parse(fs.readFileSync(path.join(projectRoot, 'extension-a
 const noticesPath = artifacts.notices;
 const providerIconResources = artifacts.providerIcons.webAccessibleResource;
 const providerIconDirectory = path.join(distDir, artifacts.providerIcons.directory);
+const providerIconBuildManifests = Object.values(artifacts.providerIcons.buildManifests).map((file) =>
+  JSON.parse(fs.readFileSync(path.join(distDir, file), 'utf8')),
+);
+const emittedFilesBySource = new Map();
+
+for (const source of artifacts.providerIcons.sourceFiles) {
+  const key = path.posix.join(artifacts.providerIcons.sourceDirectory, source);
+  const outputFiles = new Set(
+    providerIconBuildManifests.map((manifest) => manifest[key]?.file).filter((file) => typeof file === 'string'),
+  );
+
+  if (outputFiles.size !== 1) {
+    throw new Error(`Expected one Vite source-to-output mapping for ${source}, found ${outputFiles.size}.`);
+  }
+
+  emittedFilesBySource.set(source, [...outputFiles][0]);
+}
+
+const providerIconInventory = collectProviderIconInventory({
+  sourceDirectory: path.join(projectRoot, artifacts.providerIcons.sourceDirectory),
+  emittedDirectory: providerIconDirectory,
+  resourceDirectory: artifacts.providerIcons.directory,
+  sourceFiles: artifacts.providerIcons.sourceFiles,
+  emittedFilesBySource,
+});
 manifest.version = packageMetadata.version;
 manifest.web_accessible_resources = [
   {
@@ -36,11 +62,8 @@ if (!fs.existsSync(path.join(distDir, artifacts.popupHtml))) {
 const exposedResources = manifest.web_accessible_resources?.flatMap((entry) => entry.resources) ?? [];
 const fontResources = exposedResources.filter((file) => file.startsWith('assets/fonts/'));
 const hasProviderIconResources = exposedResources.includes(providerIconResources);
-const hasBundledProviderIcons =
-  fs.existsSync(providerIconDirectory) && fs.readdirSync(providerIconDirectory).some((file) => file.endsWith('.svg'));
 if (
   !hasProviderIconResources ||
-  !hasBundledProviderIcons ||
   fontResources.some((file) => !fs.existsSync(path.join(distDir, file))) ||
   exposedResources.some((file) => !file.startsWith('assets/fonts/') && file !== providerIconResources)
 ) {
@@ -65,6 +88,17 @@ if (
 }
 
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+fs.writeFileSync(
+  path.join(distDir, artifacts.providerIcons.inventoryFile),
+  `${JSON.stringify(providerIconInventory, null, 2)}\n`,
+);
+for (const file of Object.values(artifacts.providerIcons.buildManifests)) {
+  fs.rmSync(path.join(distDir, file));
+}
+const manifestDirectory = path.dirname(path.join(distDir, Object.values(artifacts.providerIcons.buildManifests)[0]));
+if (fs.readdirSync(manifestDirectory).length === 0) {
+  fs.rmdirSync(manifestDirectory);
+}
 const notices = fs.readFileSync(path.join(projectRoot, noticesPath), 'utf8').replaceAll('public/assets/', 'assets/');
 const runtimeLicenses = ['react', 'react-dom'].map(
   (dependency) =>

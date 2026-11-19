@@ -14,6 +14,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    manifest: artifacts.providerIcons.buildManifests.main,
     rollupOptions: {
       input: {
         popup: path.resolve(__dirname, artifacts.popupHtml),

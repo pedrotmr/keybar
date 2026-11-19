@@ -6,6 +6,8 @@ Every search provider must declare an `iconAsset` in `src/utils/searchProviders.
 
 Use the provider's SVG from [SVGL](https://svgl.app/) when one is listed. Bundle the SVG locally under `src/assets/provider-icons/`; do not load logos from SVGL at runtime. When SVGL offers separate light and dark assets, register both and select them with the existing appearance theme. Add the exact SVGL asset URL to the source list below.
 
+Add every bundled SVG filename to `providerIcons.sourceFiles` in `extension-artifacts.json`. The build records the emitted SVG inventory and fails if a registered asset is missing; `npm run check:extension` verifies the full inventory again.
+
 All provider logos use the shared icon slot in `global.css`. It centers the SVG, fits it within the slot while preserving its aspect ratio, and leaves an inset around it. The right-side typing hint uses the full 14px slot to preserve room for its label. Keep the source SVG's viewBox and use the shared fit for new providers.
 
 If SVGL has no matching logo, use a neutral fallback or a clearly documented local mark. Do not draw a lookalike brand logo and present it as the official mark.
