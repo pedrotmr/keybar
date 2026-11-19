@@ -6,14 +6,7 @@ export interface SearchProviderAccent {
 }
 
 export type SearchProviderIconAsset =
-  | 'google'
-  | 'google-maps'
-  | 'youtube'
-  | 'openai'
-  | 'claude'
-  | 'perplexity'
-  | 'x'
-  | 'yahoo';
+  'google' | 'google-maps' | 'youtube' | 'openai' | 'claude' | 'perplexity' | 'x' | 'yahoo';
 
 interface SearchProviderIdentity {
   id: string;
@@ -249,9 +242,8 @@ const findCommittedProvider = (
     return canonicalMatches[0];
   }
 
-  // Full names can commit directly; all other aliases stay suggestions until the user selects them.
-  const fullNameMatches = providers.filter((provider) => normalizeProviderTrigger(provider.name) === normalized);
-  return fullNameMatches.length === 1 ? fullNameMatches[0] : null;
+  // Only canonical shortcuts commit from text; aliases and full names stay suggestions until selected.
+  return null;
 };
 
 export const findSearchProviders = (
@@ -288,6 +280,33 @@ export const findProviderQueryMatch = (
     return null;
   }
 
+  const words = [...trimmedInput.matchAll(/\S+/g)];
+  const exactCompoundNameMatches = providers
+    .map((provider) => ({ provider, nameWords: normalizeProviderTrigger(provider.name).split(' ') }))
+    .filter(
+      ({ nameWords }) =>
+        nameWords.length > 1 &&
+        nameWords.length < words.length &&
+        nameWords.every((word, index) => word === normalizeProviderTrigger(words[index][0])),
+    );
+
+  if (exactCompoundNameMatches.length) {
+    const longestName = Math.max(...exactCompoundNameMatches.map(({ nameWords }) => nameWords.length));
+    const candidates = exactCompoundNameMatches
+      .filter(({ nameWords }) => nameWords.length === longestName)
+      .map(({ provider }) => provider);
+    const triggerEnd = (words[longestName - 1].index ?? 0) + words[longestName - 1][0].length;
+    const trigger = trimmedInput.slice(0, triggerEnd);
+    const resolved = resolveProviderTrigger(trigger, providers, candidates);
+
+    return {
+      trigger,
+      providers: resolved ? [resolved] : candidates,
+      provider: null,
+      query: trimmedInput.slice(words[longestName].index ?? 0).trim(),
+    };
+  }
+
   const wholeInputNameMatches = findCompoundNamePrefixMatches(trimmedInput, providers);
   if (wholeInputNameMatches.length) {
     return {
@@ -299,7 +318,6 @@ export const findProviderQueryMatch = (
     };
   }
 
-  const words = [...trimmedInput.matchAll(/\S+/g)];
   const maxTriggerWordCount = Math.max(
     1,
     ...triggerIndex.flatMap(({ triggers }) => [...triggers].map((trigger) => trigger.split(' ').length)),
@@ -313,6 +331,21 @@ export const findProviderQueryMatch = (
     const triggerEnd = (words[triggerWordCount - 1].index ?? 0) + words[triggerWordCount - 1][0].length;
     const trigger = trimmedInput.slice(0, triggerEnd);
     const query = trimmedInput.slice(triggerEnd).trim();
+    const exactCandidates = providers.filter((candidate) =>
+      getProviderTriggers(candidate).has(normalizeProviderTrigger(trigger)),
+    );
+
+    if (exactCandidates.length) {
+      const resolved = resolveProviderTrigger(trigger, providers, exactCandidates);
+
+      return {
+        trigger,
+        providers: resolved ? [resolved] : exactCandidates,
+        provider: findCommittedProvider(trigger, providers),
+        query,
+      };
+    }
+
     const compoundNameMatches = findCompoundNamePrefixMatches(trigger, providers);
 
     if (compoundNameMatches.length) {

@@ -22,8 +22,7 @@ interface ResultsListDataProps {
   items: PaletteItem[];
   selectedIndex: number;
   keyboardNavigationVersion: number;
-  query: string;
-  providerSearchMode: boolean;
+  highlightQuery: string;
   mode: 'commands' | 'tabs';
 }
 
@@ -50,8 +49,7 @@ interface ResultRowDataProps {
   index: number;
   selected: boolean;
   actionsVisible: boolean;
-  query: string;
-  providerSearchMode: boolean;
+  highlightQuery: string;
 }
 
 interface ResultRowInteractionProps {

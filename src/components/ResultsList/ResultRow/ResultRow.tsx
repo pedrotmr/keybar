@@ -8,8 +8,7 @@ export function ResultRow({
   index,
   selected,
   actionsVisible,
-  query,
-  providerSearchMode,
+  highlightQuery,
   onItemClick,
   onItemHover,
   onActionsHover,
@@ -61,7 +60,7 @@ export function ResultRow({
       </span>
       <span className="result-copy">
         <span className="result-title">
-          <HighlightedText text={item.title} query={query} providerSearchMode={providerSearchMode} />
+          <HighlightedText text={item.title} highlightQuery={highlightQuery} />
         </span>
         {details && <span className="result-subtitle">{details}</span>}
       </span>

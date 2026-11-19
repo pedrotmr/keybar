@@ -315,6 +315,9 @@ export const useCommandPaletteModel = ({
   }, [mode, query, activeProvider, providerQueryMatch]);
 
   const providerCandidate = providerCandidates.length === 1 ? providerCandidates[0] : null;
+  const isStandaloneCanonicalProviderShortcut = Boolean(
+    providerCandidate && !providerQueryMatch && query.trim().toLowerCase() === providerCandidate.prefix.toLowerCase(),
+  );
 
   const sourceItems = useMemo<PaletteItem[]>(() => {
     if (mode === 'settings') {
@@ -339,17 +342,14 @@ export const useCommandPaletteModel = ({
     }
 
     const start = performance.now();
-    const allowFallback =
-      !localDataLoading &&
-      (providerCandidates.length === 0 ||
-        Boolean(providerQueryMatch?.query || providerQueryMatch?.preserveFullQueryFallback));
+    const allowFallback = !localDataLoading && !isStandaloneCanonicalProviderShortcut;
     const searchableItems = !query.trim() && mode === 'commands' ? initialItems : sourceItems;
     const found = findPaletteResults(activeProvider, query, mode, searchableItems, allowFallback);
 
     if (
       savedSearchPrompt &&
       !activeProvider &&
-      (!providerCandidates.length ||
+      (!isStandaloneCanonicalProviderShortcut ||
         Boolean(providerQueryMatch?.query || providerQueryMatch?.preserveFullQueryFallback)) &&
       !parseProviderQuery(query) &&
       !normalizeNavigationUrl(query)
@@ -376,7 +376,9 @@ export const useCommandPaletteModel = ({
     isUnfilteredExpandedView,
     savedSearchPrompt,
     activeProvider,
+    providerQueryMatch,
     providerCandidates,
+    isStandaloneCanonicalProviderShortcut,
     localDataLoading,
     tabsReady,
   ]);
@@ -396,6 +398,11 @@ export const useCommandPaletteModel = ({
   const selectedItem = showResults ? results[activeIndex] : undefined;
   const selectedTab =
     selectedItem?.type === 'tab' ? (tabs.find((tab) => tab.id === selectedItem.tabId) ?? null) : activeTab;
+  const highlightQuery = activeProvider
+    ? query
+    : providerQueryMatch?.provider && providerQueryMatch.query
+      ? providerQueryMatch.query
+      : query;
 
   const assignmentWindowId =
     dialog?.kind === 'assign-group' ? tabs.find((tab) => tab.id === dialog.tabId)?.windowId : undefined;
@@ -1110,6 +1117,12 @@ export const useCommandPaletteModel = ({
       return;
     }
 
+    if (event.key === 'Enter' && !selectedItem && isStandaloneCanonicalProviderShortcut && providerCandidate) {
+      event.preventDefault();
+      activateSuggestedProvider(providerCandidate);
+      return;
+    }
+
     if (event.key === 'Enter' && selectedItem) {
       event.preventDefault();
       void executeItem(selectedItem);
@@ -1329,6 +1342,7 @@ export const useCommandPaletteModel = ({
     surface,
     preferences,
     query,
+    highlightQuery,
     activeProvider,
     scopeAnnouncement,
     providerCandidate,

@@ -12,8 +12,7 @@ export function ResultsList({
   items,
   selectedIndex,
   keyboardNavigationVersion,
-  query,
-  providerSearchMode,
+  highlightQuery,
   mode,
   isBusy,
   loadingState,
@@ -104,8 +103,7 @@ export function ResultsList({
                 index={index}
                 selected={index === selectedIndex}
                 actionsVisible={hoveredActionId === item.id || index === openActionsIndex}
-                query={query}
-                providerSearchMode={providerSearchMode}
+                highlightQuery={highlightQuery}
                 onItemClick={onItemClick}
                 onItemHover={onItemHover}
                 onActionsHover={setHoveredActionId}

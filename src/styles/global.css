@@ -484,6 +484,8 @@ select:focus-visible {
   align-items: center;
   gap: 2px;
   overflow-x: auto;
+  margin: -4px;
+  padding: 4px;
   scrollbar-color: var(--cc-border-strong) transparent;
   scrollbar-width: thin;
 }

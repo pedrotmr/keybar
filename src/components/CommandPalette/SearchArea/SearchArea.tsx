@@ -111,7 +111,7 @@ export function SearchArea({
         aria-atomic="true"
       >
         {providerCandidates.length > 1
-          ? `${providerCandidates.length} search providers match: ${providerCandidates.map((provider) => provider.name).join(', ')}. Press Tab to choose.`
+          ? `${providerCandidates.length} search providers match: ${providerCandidates.map((provider) => provider.name).join(', ')}. Press Tab to focus the provider choices, then Enter to select.`
           : providerCandidates.length === 1
             ? `${providerCandidates[0].verb} ${providerCandidates[0].name}. Press Tab to select.`
             : ''}

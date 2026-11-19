@@ -55,8 +55,7 @@ export function CommandPalette(props: CommandPaletteProps) {
               results={model.results}
               activeIndex={model.activeIndex}
               keyboardNavigationVersion={model.keyboardNavigationVersion}
-              query={model.query}
-              providerSearchMode={Boolean(model.activeProvider)}
+              highlightQuery={model.highlightQuery}
               isBusy={model.localDataLoading || model.isLoadingInitialTabs}
               loadingState={model.loadingState}
               emptyState={model.emptyState}
