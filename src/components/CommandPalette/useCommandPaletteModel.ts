@@ -451,6 +451,7 @@ export const useCommandPaletteModel = ({
     setMode(nextMode);
     setQuery('');
     setActiveProvider(null);
+    setScopeAnnouncement('');
     setSelectedIndex(0);
 
     requestAnimationFrame(() => {

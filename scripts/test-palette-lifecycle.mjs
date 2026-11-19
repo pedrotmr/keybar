@@ -318,6 +318,19 @@ test('command palette lifecycle', async () => {
       `Switched to ${youtubeProvider.name} search. Type a query to search.`,
       'activating a provider announces the new search scope while focus stays in the combobox',
     );
+    await act(async () => model.changeMode('settings'));
+    assert.equal(
+      model.scopeAnnouncement,
+      '',
+      'leaving provider scope through mode navigation clears stale status text',
+    );
+    await act(async () => model.changeMode('commands'));
+    await act(async () => model.activateSuggestedProvider(youtubeProvider));
+    assert.equal(
+      model.scopeAnnouncement,
+      `Switched to ${youtubeProvider.name} search. Type a query to search.`,
+      're-entering the same provider announces its scope again',
+    );
     await act(async () =>
       model.handleSearchKeyDown({
         key: 'Backspace',
