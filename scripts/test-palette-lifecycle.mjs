@@ -538,14 +538,18 @@ test('command palette lifecycle', async () => {
     });
     assert.ok(actionButton.classList.contains('is-hovered'), 'pointer hover reveals the row Actions control');
     await act(async () => {
-      resultsContent.dispatchEvent(
-        new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
-      );
+      resultsContent.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
     });
     assert.ok(!actionButton.classList.contains('is-hovered'), 'pointer exit clears hover styling');
-    assert.ok(resultRow.classList.contains('is-actions-visible'), 'pointer exit preserves spacing while Actions has focus');
+    assert.ok(
+      resultRow.classList.contains('is-actions-visible'),
+      'pointer exit preserves spacing while Actions has focus',
+    );
     await act(async () => actionButton.blur());
-    assert.ok(!resultRow.classList.contains('is-actions-visible'), 'row spacing collapses after pointer and focus leave');
+    assert.ok(
+      !resultRow.classList.contains('is-actions-visible'),
+      'row spacing collapses after pointer and focus leave',
+    );
     await unmount(uiEnv);
 
     const switcherRuntimeEvent = event();
