@@ -363,15 +363,15 @@ select:focus-visible {
 }
 .provider-mark svg {
   display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
+  width: 88%;
+  height: 88%;
 }
 .provider-mark img {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 88%;
+  height: 88%;
   object-fit: contain;
+  object-position: center;
 }
 .provider-mark .provider-logo-dark {
   display: none;
