@@ -37,6 +37,7 @@ for (const releaseBeforeReady of [false, true]) {
           mode: 'tabs',
           autoSwitchOnRelease: true,
           openedAt: Date.now(),
+          releaseKey: 'Meta',
         });
       },
       { sourceId, surfaceFile: contentSurfaces.tabs.file },

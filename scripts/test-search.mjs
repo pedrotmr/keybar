@@ -434,6 +434,10 @@ test('initial tab result ordering and presentation', async () => {
     assert.equal(getTabSwitcherReleaseKeyFromShortcut('MacCtrl+A'), 'Control');
     assert.equal(getTabSwitcherReleaseKeyFromShortcut('Command+T'), 'Meta');
     assert.equal(getTabSwitcherReleaseKeyFromShortcut('Alt+Shift+K'), 'Alt');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('⌃A'), 'Control');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('⌘T'), 'Meta');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('⌥K'), 'Alt');
+    assert.equal(getTabSwitcherReleaseKeyFromShortcut('⇧K'), null);
     assert.equal(getTabSwitcherReleaseKeyFromShortcut('K'), null);
   }
 });

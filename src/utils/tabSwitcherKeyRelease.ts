@@ -21,7 +21,15 @@ export const getTabSwitcherReleaseKeyFromShortcut = (
     return null;
   }
 
-  for (const token of shortcut.split('+').map((part) => part.trim().toLowerCase())) {
+  const tokens = shortcut
+    .replace(/⌃/g, 'Control+')
+    .replace(/⌘/g, 'Meta+')
+    .replace(/⌥/g, 'Alt+')
+    .replace(/⇧/g, 'Shift+')
+    .split('+')
+    .map((part: string) => part.trim().toLowerCase());
+
+  for (const token of tokens) {
     if (token === 'command' || token === 'cmd' || token === 'meta') {
       return 'Meta';
     }
