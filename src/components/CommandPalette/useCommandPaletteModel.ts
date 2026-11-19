@@ -16,7 +16,7 @@ import { getCommands } from '@/utils/commands';
 import { bulkCloseTabIds, isBulkCloseAction } from '@/utils/bulkClose';
 import { normalizeNavigationUrl, sendBackground } from '@/utils/chromeHelpers';
 import { writeClipboardText } from '@/utils/clipboard';
-import { findSearchProvider, parseProviderQuery } from '@/utils/searchProviders';
+import { findProviderQueryMatch, getSearchProviderSuggestions, parseProviderQuery } from '@/utils/searchProviders';
 import type { SearchProviderDefinition } from '@/utils/searchProviders';
 import { isTabInSplitView } from '@/utils/splitViews';
 import { TAB_GROUP_ID_NONE } from '@/utils/chromeApiConstants';
@@ -293,15 +293,30 @@ export const useCommandPaletteModel = ({
     };
   }, [mode, query, permissions, localDataLoaded, localDataLoading]);
 
-  const providerCandidate = useMemo(() => {
-    const term = query.trim();
-
-    if (mode !== 'commands' || activeProvider || parseProviderQuery(term)) {
+  const providerQueryMatch = useMemo(() => {
+    if (mode !== 'commands' || activeProvider) {
       return null;
     }
 
-    return findSearchProvider(term);
+    return findProviderQueryMatch(query);
   }, [mode, query, activeProvider]);
+
+  const providerCandidates = useMemo(() => {
+    if (mode !== 'commands' || activeProvider) {
+      return [];
+    }
+
+    if (providerQueryMatch) {
+      return providerQueryMatch.provider ? [] : providerQueryMatch.providers;
+    }
+
+    return getSearchProviderSuggestions(query);
+  }, [mode, query, activeProvider, providerQueryMatch]);
+
+  const providerCandidate = providerCandidates.length === 1 ? providerCandidates[0] : null;
+  const isStandaloneCanonicalProviderShortcut = Boolean(
+    providerCandidate && !providerQueryMatch && query.trim().toLowerCase() === providerCandidate.prefix.toLowerCase(),
+  );
 
   const sourceItems = useMemo<PaletteItem[]>(() => {
     if (mode === 'settings') {
@@ -326,14 +341,15 @@ export const useCommandPaletteModel = ({
     }
 
     const start = performance.now();
-    const allowFallback = !localDataLoading && !providerCandidate;
+    const allowFallback = !localDataLoading && !isStandaloneCanonicalProviderShortcut;
     const searchableItems = !query.trim() && mode === 'commands' ? initialItems : sourceItems;
     const found = findPaletteResults(activeProvider, query, mode, searchableItems, allowFallback);
 
     if (
       savedSearchPrompt &&
       !activeProvider &&
-      !providerCandidate &&
+      (!isStandaloneCanonicalProviderShortcut ||
+        Boolean(providerQueryMatch?.query || providerQueryMatch?.preserveFullQueryFallback)) &&
       !parseProviderQuery(query) &&
       !normalizeNavigationUrl(query)
     ) {
@@ -359,7 +375,9 @@ export const useCommandPaletteModel = ({
     isUnfilteredExpandedView,
     savedSearchPrompt,
     activeProvider,
-    providerCandidate,
+    providerQueryMatch,
+    providerCandidates,
+    isStandaloneCanonicalProviderShortcut,
     localDataLoading,
     tabsReady,
   ]);
@@ -379,6 +397,11 @@ export const useCommandPaletteModel = ({
   const selectedItem = showResults ? results[activeIndex] : undefined;
   const selectedTab =
     selectedItem?.type === 'tab' ? (tabs.find((tab) => tab.id === selectedItem.tabId) ?? null) : activeTab;
+  const highlightQuery = activeProvider
+    ? query
+    : providerQueryMatch?.provider && providerQueryMatch.query
+      ? providerQueryMatch.query
+      : query;
 
   const assignmentWindowId =
     dialog?.kind === 'assign-group' ? tabs.find((tab) => tab.id === dialog.tabId)?.windowId : undefined;
@@ -694,12 +717,16 @@ export const useCommandPaletteModel = ({
     }
   };
 
-  const activateProvider = (provider: SearchProviderDefinition): void => {
+  const activateProvider = (provider: SearchProviderDefinition, nextQuery = ''): void => {
     providerOriginQuery.current = query;
     setActiveProvider(provider);
-    setQuery('');
+    setQuery(nextQuery);
     setSelectedIndex(0);
     inputRef.current?.focus({ preventScroll: true });
+  };
+
+  const activateSuggestedProvider = (provider: SearchProviderDefinition): void => {
+    activateProvider(provider, providerQueryMatch?.provider ? '' : (providerQueryMatch?.query ?? ''));
   };
 
   const returnToCommandSearch = (): void => {
@@ -1055,11 +1082,9 @@ export const useCommandPaletteModel = ({
     }
 
     if (event.key === 'Tab' && !event.shiftKey && mode === 'commands' && !activeProvider) {
-      const provider = findSearchProvider(query);
-
-      if (provider) {
+      if (providerCandidate) {
         event.preventDefault();
-        activateProvider(provider);
+        activateSuggestedProvider(providerCandidate);
         return;
       }
     }
@@ -1089,15 +1114,16 @@ export const useCommandPaletteModel = ({
       return;
     }
 
+    if (event.key === 'Enter' && !selectedItem && isStandaloneCanonicalProviderShortcut && providerCandidate) {
+      event.preventDefault();
+      activateSuggestedProvider(providerCandidate);
+      return;
+    }
+
     if (event.key === 'Enter' && selectedItem) {
       event.preventDefault();
       void executeItem(selectedItem);
       return;
-    }
-
-    if (event.key === 'Enter' && providerCandidate) {
-      event.preventDefault();
-      activateProvider(providerCandidate);
     }
   };
 
@@ -1309,8 +1335,10 @@ export const useCommandPaletteModel = ({
     surface,
     preferences,
     query,
+    highlightQuery,
     activeProvider,
     providerCandidate,
+    providerCandidates,
     inputRef,
     commandCenterRef,
     settingsViewRef,
@@ -1363,6 +1391,7 @@ export const useCommandPaletteModel = ({
     handleQueryChange,
     returnToCommandSearch,
     activateProvider,
+    activateSuggestedProvider,
     openShortcuts,
     handleResultClick,
     handleResultHover,

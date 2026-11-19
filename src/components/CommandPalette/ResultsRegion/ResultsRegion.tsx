@@ -10,8 +10,7 @@ interface ResultsRegionListDataProps {
   results: PaletteItem[];
   activeIndex: number;
   keyboardNavigationVersion: number;
-  query: string;
-  providerSearchMode: boolean;
+  highlightQuery: string;
   isInitialList: boolean;
 }
 
@@ -48,8 +47,7 @@ export function ResultsRegion({
   results,
   activeIndex,
   keyboardNavigationVersion,
-  query,
-  providerSearchMode,
+  highlightQuery,
   isBusy,
   loadingState,
   emptyState,
@@ -71,8 +69,7 @@ export function ResultsRegion({
         items={results}
         selectedIndex={activeIndex}
         keyboardNavigationVersion={keyboardNavigationVersion}
-        query={query}
-        providerSearchMode={providerSearchMode}
+        highlightQuery={highlightQuery}
         mode="commands"
         isBusy={isBusy}
         loadingState={loadingState}

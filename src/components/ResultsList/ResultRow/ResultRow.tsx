@@ -8,8 +8,7 @@ export function ResultRow({
   item,
   index,
   selected,
-  query,
-  providerSearchMode,
+  highlightQuery,
   onItemClick,
   onItemHover,
   onItemContextMenu,
@@ -50,7 +49,7 @@ export function ResultRow({
       </span>
       <span className="result-copy">
         <span className="result-title">
-          <HighlightedText text={item.title} query={query} providerSearchMode={providerSearchMode} />
+          <HighlightedText text={item.title} highlightQuery={highlightQuery} />
         </span>
         {details && <span className="result-subtitle">{details}</span>}
       </span>

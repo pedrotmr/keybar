@@ -203,6 +203,88 @@ test('command palette lifecycle', async () => {
     await act(async () => model.handleQueryChange('Composing text'));
     await act(async () => model.handleSurfaceEscape(keyEvent('Escape', true)));
     assert.equal(model.query, 'Composing text', 'IME cancellation cannot reset the search');
+    await act(async () => model.handleQueryChange('yt'));
+    assert.ok(
+      !model.results.some((item) => item.id === 'search-saved-pages'),
+      'a standalone provider shortcut does not select the saved-pages permission action',
+    );
+    await act(async () => model.handleQueryChange('yt lo-fi music'));
+    assert.equal(
+      model.highlightQuery,
+      'lo-fi music',
+      'committed provider triggers reuse the parsed query for highlighting',
+    );
+    await act(async () => model.handleQueryChange('yt'));
+    await act(async () => model.handleSearchKeyDown(keyEvent('Enter')));
+    assert.equal(model.activeProvider?.id, 'youtube', 'Enter commits a standalone canonical provider shortcut');
+    await act(async () => model.handleSearchKeyDown(keyEvent('Backspace')));
+    assert.equal(model.query, 'yt', 'returning from a shortcut restores the original query');
+
+    for (const query of ['goog', 'ma', 'maps']) {
+      await act(async () => model.handleQueryChange(query));
+      const googleFallback = model.results.find((item) => item.id === 'search-google');
+      assert.equal(
+        googleFallback?.url,
+        `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+        `the full-query Google fallback remains available for ${query}`,
+      );
+      assert.ok(
+        model.results.some((item) => item.id === 'search-saved-pages'),
+        `provider suggestions do not hide saved-page search for ${query}`,
+      );
+    }
+
+    await act(async () => model.handleQueryChange('google drive'));
+    assert.equal(model.highlightQuery, 'google drive', 'ordinary searches highlight the complete query');
+    assert.equal(
+      model.providerCandidates[0]?.id,
+      'google',
+      'a full provider name can still be explicitly selected from an ordinary query',
+    );
+    assert.equal(
+      model.results.find((item) => item.id === 'search-google')?.url,
+      'https://www.google.com/search?q=google%20drive',
+      'typing an ordinary phrase does not strip its provider-name prefix',
+    );
+    assert.ok(
+      model.results.some((item) => item.id === 'search-saved-pages'),
+      'an uncommitted provider suggestion keeps saved-page search available',
+    );
+    await act(async () => model.handleQueryChange('you are here'));
+    assert.deepEqual(
+      model.providerCandidates.map((provider) => provider.id),
+      ['youtube'],
+      'ordinary text can still expose a provider suggestion without committing to it',
+    );
+    assert.ok(model.results.some((item) => item.id === 'search-google'));
+    assert.ok(
+      model.results.some((item) => item.id === 'search-saved-pages'),
+      'provider suggestions do not hide the existing saved-pages search action',
+    );
+    await act(async () => model.handleQueryChange('Google Ma'));
+    assert.deepEqual(
+      model.providerCandidates.map((provider) => provider.id),
+      ['google-maps'],
+    );
+    assert.ok(
+      model.results.some((item) => item.id === 'search-google'),
+      'a partial Maps name retains the ordinary Google fallback',
+    );
+    await act(async () => model.handleSearchKeyDown(keyEvent('Tab')));
+    assert.equal(model.activeProvider?.id, 'google-maps');
+    assert.equal(model.query, '', 'selecting a partial Maps name starts with a clean provider query');
+    await act(async () => model.handleSearchKeyDown(keyEvent('Backspace')));
+    await act(async () => model.handleQueryChange('Google Maps lunch'));
+    assert.equal(model.providerCandidates[0]?.id, 'google-maps');
+    assert.equal(
+      model.results.find((item) => item.id === 'search-google')?.url,
+      'https://www.google.com/search?q=Google%20Maps%20lunch',
+      'an unselected Maps phrase retains its full-query Google fallback',
+    );
+    await act(async () => model.handleSearchKeyDown(keyEvent('Tab')));
+    assert.equal(model.activeProvider?.id, 'google-maps');
+    assert.equal(model.query, 'lunch', 'explicitly selecting Maps keeps the text after its full name');
+    assert.equal(model.highlightQuery, 'lunch', 'selected provider results reuse the provider query for highlighting');
     await unmount(keyboardEnv);
 
     const savedRequests = { bookmarks: [], history: [] };

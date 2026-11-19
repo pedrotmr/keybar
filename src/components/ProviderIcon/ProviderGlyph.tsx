@@ -38,6 +38,21 @@ export function ProviderGlyph({ id }: ProviderGlyphProps) {
           />
         </svg>
       );
+    case 'google-maps':
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="var(--provider-accent)"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" />
+          <path d="M9 3v15m6-12v15" />
+        </svg>
+      );
     case 'youtube':
       return (
         <svg viewBox="0 0 24 24" aria-hidden="true">
