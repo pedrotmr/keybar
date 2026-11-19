@@ -34,11 +34,18 @@ export const getTabSwitcherReleaseKeyFromShortcut = (
       return 'Meta';
     }
 
-    if (token === 'ctrl' || token === 'control' || token === 'macctrl' || token === 'strg') {
+    if (
+      token === 'ctrl' ||
+      token === 'control' ||
+      token === 'macctrl' ||
+      token === 'strg' ||
+      token === 'ktrl' ||
+      token === 'i-ctrl'
+    ) {
       return 'Control';
     }
 
-    if (token === 'alt' || token === 'option') {
+    if (token === 'alt' || token === 'option' || token === 'i-alt') {
       return 'Alt';
     }
   }

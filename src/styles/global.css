@@ -1745,7 +1745,6 @@ mark {
   color: var(--cc-text);
   box-shadow: var(--cc-shadow);
   pointer-events: auto;
-  scroll-snap-type: x proximity;
   scrollbar-width: thin;
   animation: surface-in 110ms ease-out both;
 }
@@ -1769,7 +1768,6 @@ mark {
   background: var(--cc-panel);
   color: var(--cc-text);
   cursor: pointer;
-  scroll-snap-align: start;
   text-align: left;
   user-select: none;
   transition:

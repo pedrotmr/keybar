@@ -199,11 +199,13 @@ export const useTabSwitcherModel = ({
 
     const panelBounds = panel.getBoundingClientRect();
     const cardBounds = selectedCard.getBoundingClientRect();
+    const viewportLeft = panelBounds.left + panel.clientLeft;
+    const viewportRight = viewportLeft + panel.clientWidth;
 
-    if (cardBounds.left < panelBounds.left) {
-      panel.scrollLeft -= panelBounds.left - cardBounds.left;
-    } else if (cardBounds.right > panelBounds.right) {
-      panel.scrollLeft += cardBounds.right - panelBounds.right;
+    if (cardBounds.left < viewportLeft) {
+      panel.scrollLeft -= viewportLeft - cardBounds.left;
+    } else if (cardBounds.right > viewportRight) {
+      panel.scrollLeft += cardBounds.right - viewportRight;
     }
   }, [selectedIndex, tabs]);
 
