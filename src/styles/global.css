@@ -566,7 +566,7 @@ kbd {
 }
 .result-actions-trigger {
   position: absolute;
-  inset-inline-end: 22px;
+  inset-inline-end: 12px;
   display: grid;
   width: 28px;
   height: 28px;
@@ -605,7 +605,7 @@ kbd {
     transform: translateX(5px);
   }
   .result-row.has-actions {
-    padding-inline-end: 20px;
+    padding-inline-end: 12px;
   }
   .result-row.has-actions.is-actions-visible {
     padding-inline-end: 48px;
