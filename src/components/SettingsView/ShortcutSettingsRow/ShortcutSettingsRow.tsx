@@ -74,7 +74,12 @@ export function ShortcutSettingsRow({ onManageShortcuts }: ShortcutSettingsRowPr
           </svg>
         </button>
       </div>
-      <dl className="settings-shortcut-list" aria-busy={shortcutState.status === 'loading'}>
+      <dl
+        className="settings-shortcut-list"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-busy={shortcutState.status === 'loading'}
+      >
         {SHORTCUTS.map((shortcut) => {
           const binding = shortcutState.status === 'ready' ? shortcutState.bindings[shortcut.name] : undefined;
 
