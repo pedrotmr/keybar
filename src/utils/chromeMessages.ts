@@ -130,6 +130,10 @@ interface BrowserPageMessages {
   'browser:open-shortcuts': { request: EmptyPayload; response: boolean };
 }
 
+interface ShortcutMessages {
+  'shortcuts:list': { request: EmptyPayload; response: Array<{ name?: string; shortcut?: string }> };
+}
+
 interface BrowserUrlMessages {
   'browser:split-capabilities': { request: EmptyPayload; response: { create: boolean; unsplit: boolean } };
   'browser:open-url': { request: { url: string }; response: boolean };
@@ -163,6 +167,7 @@ export interface ChromeMessages
     GroupMessages,
     WindowMessages,
     BrowserMessages,
+    ShortcutMessages,
     SessionMessages,
     PermissionMessages,
     BrowserDataMessages {}
@@ -197,6 +202,7 @@ export const BACKGROUND_ACTIONS = [
   'browser:open-chrome-settings',
   'browser:open-web-store',
   'browser:open-shortcuts',
+  'shortcuts:list',
   'sessions:restore',
   'groups:ungroup-current',
   'groups:close-current',
