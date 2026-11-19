@@ -43,7 +43,7 @@ const {
 const { consumePopupLaunchIntent, parsePopupLaunchFallback, writePopupLaunchIntent } = await server.ssrLoadModule(
   '/src/utils/popupLaunchIntent.ts',
 );
-const { asPositiveInteger, normalizeNavigationUrl, normalizeSavedNavigationUrl } =
+const { asPositiveInteger, formatShortcutAccessibleLabel, normalizeNavigationUrl, normalizeSavedNavigationUrl } =
   await server.ssrLoadModule('/src/utils/chromeHelpers.ts');
 const { writeClipboardText } = await server.ssrLoadModule('/src/utils/clipboard.ts');
 const { themeRegistry, themeTokenNames, defaultThemePreferences, normalizeThemePreferences } =
@@ -162,6 +162,10 @@ test('overlay, cache, ID, and clipboard behavior', async () => {
     assert.equal(asPositiveInteger(undefined), undefined, 'missing IDs remain absent');
     assert.equal(asPositiveInteger(0), undefined, 'zero is rejected as an invalid Chrome window or tab ID');
     assert.equal(asPositiveInteger('17'), undefined, 'IDs must arrive as numbers instead of coercible strings');
+    assert.equal(formatShortcutAccessibleLabel('⌃A'), 'Control plus A');
+    assert.equal(formatShortcutAccessibleLabel('⌘T'), 'Command plus T');
+    assert.equal(formatShortcutAccessibleLabel('⌃⌥⇧K'), 'Control plus Option plus Shift plus K');
+    assert.equal(formatShortcutAccessibleLabel('Ctrl+Alt+K'), 'Control plus Alt plus K');
 
     const previewStorage = new Map();
     let blockPreviewRead = false;

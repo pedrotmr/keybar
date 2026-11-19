@@ -1354,6 +1354,66 @@ mark {
   font-size: calc(11px * var(--cc-font-scale));
   line-height: 1.35;
 }
+.settings-shortcuts {
+  margin-bottom: 22px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--cc-border);
+}
+.settings-shortcuts-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.settings-shortcuts-heading h3,
+.settings-shortcuts-heading p {
+  margin: 0;
+}
+.settings-shortcut-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+}
+.settings-shortcut-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.settings-shortcut-item dt {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-shortcut-item dd {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  margin: 0;
+}
+.settings-shortcut-fallback {
+  color: var(--cc-muted);
+  font-size: calc(11px * var(--cc-font-scale));
+  line-height: 1.35;
+}
+.settings-shortcuts-note {
+  margin: 12px 0 0;
+  color: var(--cc-muted);
+  font-size: calc(11px * var(--cc-font-scale));
+  line-height: 1.45;
+}
+@container settings-content (max-width: 420px) {
+  .settings-shortcuts-heading,
+  .settings-shortcut-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .settings-shortcut-item dd {
+    justify-content: flex-start;
+  }
+}
 
 .button-secondary,
 .button-primary,

@@ -41,12 +41,12 @@ export function SettingsView({ preferences, onChange, onManageShortcuts, onBack,
         <p>Choose how the Command Bar and Tab Switcher look.</p>
       </div>
 
+      <ShortcutSettingsRow onManageShortcuts={onManageShortcuts} />
       <AppearanceSection preferences={preferences} onChange={onChange} />
       <PaletteSection preferences={preferences} onChange={onChange} />
       <FontFamilySection preferences={preferences} onChange={onChange} />
       <CommandBarSizeSection preferences={preferences} onChange={onChange} />
       <WindowModeSection preferences={preferences} onChange={onChange} />
-      <ShortcutSettingsRow onManageShortcuts={onManageShortcuts} />
     </section>
   );
 }

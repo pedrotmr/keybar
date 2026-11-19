@@ -28,6 +28,7 @@ export const formatShortcutLabel = (shortcut: string): string => {
   const labels: Record<string, string> = {
     Command: '⌘',
     Cmd: '⌘',
+    MacCtrl: 'Ctrl',
     Control: 'Ctrl',
     Ctrl: 'Ctrl',
     Shift: '⇧',
@@ -38,7 +39,40 @@ export const formatShortcutLabel = (shortcut: string): string => {
   return shortcut
     .split('+')
     .map((part) => labels[part] ?? part.toUpperCase())
-    .join('');
+    .join(' + ');
+};
+
+export const formatShortcutAccessibleLabel = (shortcut: string): string => {
+  const labels: Record<string, string> = {
+    Command: 'Command',
+    Cmd: 'Command',
+    MacCtrl: 'Control',
+    Control: 'Control',
+    Ctrl: 'Control',
+    Shift: 'Shift',
+    Option: 'Option',
+    Alt: 'Alt',
+  };
+  const symbolLabels: Record<string, string> = {
+    '⌘': 'Command',
+    '⌃': 'Control',
+    '⌥': 'Option',
+    '⇧': 'Shift',
+  };
+
+  return shortcut
+    .split('+')
+    .flatMap((part) => {
+      if (labels[part]) {
+        return [labels[part]];
+      }
+
+      const symbols = part.match(/^[⌘⌃⌥⇧]+/)?.[0] ?? '';
+      const key = part.slice(symbols.length);
+
+      return [...symbols].map((symbol) => symbolLabels[symbol]).concat(key ? [key] : []);
+    })
+    .join(' plus ');
 };
 
 export const normalizeNavigationUrl = (input: string): string | null => {

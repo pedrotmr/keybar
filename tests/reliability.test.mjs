@@ -31,6 +31,43 @@ test('reliability contracts', { timeout: 15000 }, async (t) => {
     await assert.rejects(sendBackground('tabs:activate', { tabId: 999 }), /No tab with id/);
     assert.equal((await sendBackground('tabs:current')).id, 1);
   });
+  await t.test('extension update reconfigures the action for existing tabs', async () => {
+    tabs.push({
+      id: 4,
+      windowId: 10,
+      index: 2,
+      active: false,
+      title: 'Existing extension page',
+      url: chrome.runtime.getURL(artifacts.popupHtml),
+    });
+
+    const configured = [];
+    const configuredAllTabs = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Update did not configure every open tab.')), 1000);
+      chrome.action.setPopup = async (options) => {
+        configured.push(options);
+
+        if (configured.length === tabs.length) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      };
+
+      chrome.runtime.onInstalled.emit({ reason: 'update' });
+    });
+
+    await configuredAllTabs;
+    assert.deepEqual(
+      configured.sort((left, right) => left.tabId - right.tabId),
+      [
+        { tabId: 1, popup: '' },
+        { tabId: 2, popup: '' },
+        { tabId: 3, popup: '' },
+        { tabId: 4, popup: artifacts.popupHtml },
+      ],
+      'the update hook restores click behavior for normal and extension tabs',
+    );
+  });
   await t.test('activation survives a vanished source and focuses the target window', async () => {
     const focused = [];
     chrome.windows.update = async (id, values) => focused.push({ id, ...values });
