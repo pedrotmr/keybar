@@ -354,6 +354,7 @@ select:focus-visible {
 }
 .provider-mark {
   display: grid;
+  grid-template: 100% / 100%;
   width: 20px;
   height: 20px;
   flex: 0 0 auto;
@@ -361,18 +362,13 @@ select:focus-visible {
   color: var(--cc-text);
   line-height: 1;
 }
-.provider-mark svg {
+.provider-mark > :is(img, svg) {
   display: block;
-  width: 88%;
-  height: 88%;
+  width: var(--provider-logo-fit, 88%);
+  height: var(--provider-logo-fit, 88%);
 }
-.provider-mark img {
-  display: block;
-  width: 88%;
-  height: 88%;
+.provider-mark > img {
   object-fit: contain;
-  object-position: center;
-  transform: translateY(var(--provider-logo-offset-y, 0));
 }
 .provider-mark .provider-logo-dark {
   display: none;
@@ -475,17 +471,10 @@ select:focus-visible {
   text-overflow: ellipsis;
 }
 .provider-hint .provider-hint-icon {
+  --provider-logo-fit: 100%;
   width: 14px;
   height: 14px;
   flex: 0 0 14px;
-}
-.provider-hint .provider-hint-icon img,
-.provider-hint .provider-hint-icon svg {
-  width: 100%;
-  height: 100%;
-}
-.provider-hint .provider-hint-icon img {
-  transform: none;
 }
 .provider-candidates {
   display: flex;

@@ -6,7 +6,7 @@ Every search provider must declare an `iconAsset` in `src/utils/searchProviders.
 
 Use the provider's SVG from [SVGL](https://svgl.app/) when one is listed. Bundle the SVG locally under `src/assets/provider-icons/`; do not load logos from SVGL at runtime. When SVGL offers separate light and dark assets, register both and select them with the existing appearance theme. Add the exact SVGL asset URL to the source list below.
 
-All provider logos use the shared centered, aspect-preserving icon slot in `global.css`, with an inset from the slot edges. New providers should use that renderer as-is; do not add per-provider size overrides. If a logo still looks optically off-center inside a correctly centered viewBox, add a small `opticalOffsetY` in `ProviderGlyph.tsx`; the right-side typing hint intentionally suppresses that offset and fills its smaller slot to preserve label room.
+All provider logos use the shared icon slot in `global.css`. It centers the SVG, fits it within the slot while preserving its aspect ratio, and leaves an inset around it. The right-side typing hint uses the full 14px slot to preserve room for its label. Keep the source SVG's viewBox and use the shared fit for new providers.
 
 If SVGL has no matching logo, use a neutral fallback or a clearly documented local mark. Do not draw a lookalike brand logo and present it as the official mark.
 
@@ -22,5 +22,3 @@ If SVGL has no matching logo, use a neutral fallback or a clearly documented loc
 | Perplexity | `perplexity.svg` | [`perplexity.svg`](https://svgl.app/library/perplexity.svg) |
 | X | `x-light.svg`, `x-dark.svg` | [`x.svg`](https://svgl.app/library/x.svg), [`x_dark.svg`](https://svgl.app/library/x_dark.svg) |
 | Yahoo | Local `Y!` fallback | No Yahoo entry was returned by the SVGL search API on 2026-11-19. |
-
-The Google Maps SVG keeps SVGL's paths with a one-unit viewBox gutter because its artwork touches the source viewBox edges; this avoids clipping at small icon sizes.
