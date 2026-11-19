@@ -16,7 +16,10 @@ try {
     version: pkg.version,
     web_accessible_resources: [
       {
-        resources: Object.values(artifacts.fonts.families).flatMap((family) => family.faces.map((face) => face.path)),
+        resources: [
+          ...Object.values(artifacts.fonts.families).flatMap((family) => family.faces.map((face) => face.path)),
+          artifacts.providerIcons.webAccessibleResource,
+        ],
         matches: artifacts.fonts.matches,
       },
     ],

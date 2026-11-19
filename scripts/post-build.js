@@ -14,8 +14,8 @@ const manifest = JSON.parse(fs.readFileSync(sourceManifestPath, 'utf8'));
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
 const artifacts = JSON.parse(fs.readFileSync(path.join(projectRoot, 'extension-artifacts.json'), 'utf8'));
 const noticesPath = artifacts.notices;
-const providerIconResources = 'assets/provider-icons/*.svg';
-const providerIconDirectory = path.join(distDir, 'assets', 'provider-icons');
+const providerIconResources = artifacts.providerIcons.webAccessibleResource;
+const providerIconDirectory = path.join(distDir, artifacts.providerIcons.directory);
 manifest.version = packageMetadata.version;
 manifest.web_accessible_resources = [
   {

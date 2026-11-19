@@ -529,6 +529,23 @@ test('command palette lifecycle', async () => {
     assert.equal(actionButton.closest('[role="option"]'), null, 'the Actions button is outside the listbox option');
     assert.equal(actionButton.getAttribute('aria-describedby'), resultDomId(renderedTab.id));
     assert.equal(actionButton.getAttribute('aria-label'), `Actions for ${renderedTab.title}`);
+    const resultRow = option;
+    const resultsContent = ui.querySelector('.results-list-content');
+    await act(async () => actionButton.focus());
+    assert.ok(resultRow.classList.contains('is-actions-visible'), 'keyboard focus reserves space for row actions');
+    await act(async () => {
+      actionButton.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+    });
+    assert.ok(actionButton.classList.contains('is-hovered'), 'pointer hover reveals the row Actions control');
+    await act(async () => {
+      resultsContent.dispatchEvent(
+        new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
+      );
+    });
+    assert.ok(!actionButton.classList.contains('is-hovered'), 'pointer exit clears hover styling');
+    assert.ok(resultRow.classList.contains('is-actions-visible'), 'pointer exit preserves spacing while Actions has focus');
+    await act(async () => actionButton.blur());
+    assert.ok(!resultRow.classList.contains('is-actions-visible'), 'row spacing collapses after pointer and focus leave');
     await unmount(uiEnv);
 
     const switcherRuntimeEvent = event();

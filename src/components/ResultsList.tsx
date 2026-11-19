@@ -29,6 +29,7 @@ export function ResultsList({
   const contentRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [hoveredActionId, setHoveredActionId] = useState<string | null>(null);
+  const [focusedActionId, setFocusedActionId] = useState<string | null>(null);
   const [actionButtonTops, setActionButtonTops] = useState<number[]>([]);
 
   useLayoutEffect(() => {
@@ -102,7 +103,9 @@ export function ResultsList({
                 item={item}
                 index={index}
                 selected={index === selectedIndex}
-                actionsVisible={hoveredActionId === item.id || index === openActionsIndex}
+                actionsVisible={
+                  hoveredActionId === item.id || focusedActionId === item.id || index === openActionsIndex
+                }
                 highlightQuery={highlightQuery}
                 onItemClick={onItemClick}
                 onItemHover={onItemHover}
@@ -133,7 +136,7 @@ export function ResultsList({
                         setHoveredActionId(item.id);
                         onItemHover(index);
                       }}
-                      onFocus={() => setHoveredActionId(item.id)}
+                      onFocus={() => setFocusedActionId(item.id)}
                       onBlur={(event) => {
                         const relatedTarget = event.relatedTarget;
                         const nextAction =
@@ -141,7 +144,7 @@ export function ResultsList({
                             ? relatedTarget.closest<HTMLButtonElement>('.result-actions-trigger')
                             : null;
 
-                        setHoveredActionId(nextAction?.dataset.resultId ?? null);
+                        setFocusedActionId(nextAction?.dataset.resultId ?? null);
                       }}
                       onMouseLeave={(event) => {
                         const relatedTarget = event.relatedTarget;
