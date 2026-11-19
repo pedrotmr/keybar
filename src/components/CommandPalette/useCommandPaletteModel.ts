@@ -1284,6 +1284,10 @@ export const useCommandPaletteModel = ({
         return;
       }
 
+      if (target.closest('.result-actions-trigger')) {
+        return;
+      }
+
       if (target.closest('.result-row')) {
         event.preventDefault();
         return;

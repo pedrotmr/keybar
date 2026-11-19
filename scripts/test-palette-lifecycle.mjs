@@ -91,6 +91,7 @@ test('command palette lifecycle', async () => {
       };
       globalThis.chrome = {
         runtime: {
+          getURL: (path) => `chrome-extension://test/${path}`,
           onMessage: runtimeEvent,
           sendMessage: async (message) => {
             env.calls.push(message);
@@ -123,6 +124,21 @@ test('command palette lifecycle', async () => {
       assert.equal(env.runtimeEvent.listeners.size, 0, 'runtime subscriptions are disposed');
       assert.equal(env.storageEvent.listeners.size, 0, 'storage subscriptions are disposed');
     };
+
+    const actionToggleEnv = await mount();
+    const tabResultIndex = model.results.findIndex((item) => item.type === 'tab');
+    assert.ok(tabResultIndex >= 0, 'the command palette has a tab result for its Actions control');
+    await act(async () => {
+      assert.equal(model.handleResultContextMenu(tabResultIndex), true);
+    });
+    assert.ok(model.actionDock, 'the tab Actions dock opens');
+    const actionTrigger = document.createElement('button');
+    actionTrigger.className = 'result-actions-trigger';
+    await act(async () => model.handleContainerMouseDown({ target: actionTrigger, preventDefault() {} }));
+    assert.ok(model.actionDock, 'pressing the row Actions button does not dismiss the dock before its click');
+    await act(async () => model.toggleActionDock(tabResultIndex, false));
+    assert.equal(model.actionDock, null, 'the row Actions button can toggle its open dock closed');
+    await unmount(actionToggleEnv);
 
     const snapshots = [];
     const refreshEnv = await mount({
@@ -452,7 +468,7 @@ test('command palette lifecycle', async () => {
     assert.equal(scopeStatus.getAttribute('role'), 'status');
     assert.equal(scopeStatus.textContent.trim(), `Switched to ${provider.name} search. Type a query to search.`);
     const option = ui.querySelector('[role="option"]');
-    const actionButton = ui.querySelector('.result-actions-toolbar-trigger');
+    const actionButton = ui.querySelector('.result-actions-trigger');
     assert.ok(option && actionButton, 'the selected tab and its actions control render');
     assert.equal(option.querySelector('button'), null, 'listbox options contain no focusable Actions button');
     assert.equal(actionButton.closest('[role="option"]'), null, 'the Actions button is outside the listbox option');
@@ -471,6 +487,7 @@ test('command palette lifecycle', async () => {
     let switcherClosed = 0;
     globalThis.chrome = {
       runtime: {
+        getURL: (path) => `chrome-extension://test/${path}`,
         onMessage: switcherRuntimeEvent,
         sendMessage: async (message) => {
           switcherCalls.push(message);
@@ -527,16 +544,27 @@ test('command palette lifecycle', async () => {
     root = null;
 
     const css = await readFile(new URL('../src/styles/global.css', import.meta.url), 'utf8');
-    assert.match(css, /\.search-input:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--cc-focus\)/);
+    assert.match(css, /\.search-input\s*\{[^}]*caret-color:\s*var\(--cc-accent\)/);
+    assert.match(css, /\.search-input:focus-visible\s*\{[^}]*outline:\s*0/);
+    assert.match(
+      css,
+      /\.search-area:has\(\.search-input:focus-visible\) \.search-symbol\s*\{[^}]*color:\s*var\(--cc-accent\)/,
+    );
     assert.match(
       css,
       /@media\s*\(forced-colors:\s*active\)[\s\S]*?button:focus-visible,\s*input:focus-visible,\s*select:focus-visible\s*\{[^}]*outline-color:\s*Highlight/,
     );
     assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?scroll-behavior:\s*auto !important/);
+    assert.match(
+      css,
+      /@media\s*\(hover:\s*hover\)[\s\S]*?\.result-row\.has-actions\s*\{[^}]*padding-inline-end:\s*12px/,
+    );
+    assert.match(css, /\.result-row\.has-actions\.is-actions-visible\s*\{[^}]*padding-inline-end:\s*48px/);
+    assert.match(css, /\.result-row\s*\{[^}]*padding-inline-end 160ms ease-out/);
     assert.match(css, /\.tab-switcher-panel\s*\{[^}]*display:\s*flex;[^}]*overflow-x:\s*auto;/);
     assert.match(
       css,
-      /\.tab-card\.is-selected \.tab-card-title\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;/,
+      /\.tab-card\.is-selected \.tab-card-title\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;[^}]*-webkit-line-clamp:\s*2;/,
     );
     console.log(
       'Palette lifecycle passed: stale snapshots, repeated Enter/retry, group toggles, permission revocation, keyboard search/navigation/selection/back/close, scope announcements, listbox actions, focus and display CSS, subscription cleanup.',

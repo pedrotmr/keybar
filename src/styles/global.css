@@ -1726,10 +1726,13 @@ mark {
   align-items: flex-start;
 }
 .tab-card.is-selected .tab-card-title {
-  overflow: visible;
+  display: -webkit-box;
+  overflow: hidden;
   overflow-wrap: anywhere;
-  text-overflow: clip;
+  text-overflow: ellipsis;
   white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .tab-card-preview {
   position: relative;
@@ -2075,6 +2078,9 @@ body:has(.cc-root > .tab-switcher-overlay),
   }
   .search-area:has(.search-input:focus-visible) .search-symbol {
     color: Highlight;
+  }
+  .search-input {
+    caret-color: Highlight;
   }
   .result-row.is-selected {
     border-color: transparent;
