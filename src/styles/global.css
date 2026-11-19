@@ -614,6 +614,9 @@ kbd {
 .result-actions-trigger:active {
   transform: scale(0.92);
 }
+.result-row.has-actions {
+  padding-inline-end: 48px;
+}
 @media (hover: hover) {
   .result-actions-trigger {
     width: 0;
@@ -648,9 +651,6 @@ kbd {
   .result-actions-trigger {
     transform: none;
   }
-}
-.result-row.has-actions {
-  padding-inline-end: 48px;
 }
 .result-row.is-selected {
   border-color: transparent;

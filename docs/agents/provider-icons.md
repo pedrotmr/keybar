@@ -20,3 +20,5 @@ If SVGL has no matching logo, use a neutral fallback or a clearly documented loc
 | Perplexity | `perplexity.svg` | [`perplexity.svg`](https://svgl.app/library/perplexity.svg) |
 | X | `x-light.svg`, `x-dark.svg` | [`x.svg`](https://svgl.app/library/x.svg), [`x_dark.svg`](https://svgl.app/library/x_dark.svg) |
 | Yahoo | Local `Y!` fallback | No Yahoo entry was returned by the SVGL search API on 2026-11-19. |
+
+The Google Maps SVG keeps SVGL's paths with a one-unit viewBox gutter because its artwork touches the source viewBox edges; this avoids clipping at small icon sizes.
