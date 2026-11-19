@@ -860,8 +860,8 @@ test('search ranking and navigation behavior', async () => {
       'Google Maps preserves dot queries in the query parameter instead of normalizing them as path segments',
     );
     const mapsGlyph = ProviderGlyph({ id: googleMaps.id });
-    assert.equal(mapsGlyph.type, 'svg', 'Google Maps has a local provider icon');
-    assert.equal(mapsGlyph.props.stroke, 'var(--provider-accent)', 'the map glyph uses its provider accent color');
+    assert.equal(mapsGlyph.type.name, 'ProviderLogoImage', 'Google Maps uses its bundled SVG provider logo');
+    assert.match(mapsGlyph.props.src, /google-maps.*\.svg/, 'Google Maps uses its own bundled SVG asset');
     assert.deepEqual(providerAccentStyle(googleMaps), {
       '--provider-accent-light': '#1a73e8',
       '--provider-accent-dark': '#8ab4f8',

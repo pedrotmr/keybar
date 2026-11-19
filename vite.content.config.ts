@@ -30,7 +30,10 @@ export function contentConfig(surface: 'commands' | 'tabs') {
       rollupOptions: {
         output: {
           inlineDynamicImports: true,
-          assetFileNames: 'assets/[name]-[hash][extname]',
+          assetFileNames: (asset) =>
+            asset.name?.endsWith('.svg')
+              ? 'assets/provider-icons/[name]-[hash][extname]'
+              : 'assets/[name]-[hash][extname]',
         },
       },
     },

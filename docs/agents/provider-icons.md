@@ -12,13 +12,13 @@ If SVGL has no matching logo, use a neutral fallback or a clearly documented loc
 
 ## Current assets
 
-| Provider | Bundled asset | SVGL source |
-| --- | --- | --- |
-| Google | `google.svg` | [`google.svg`](https://svgl.app/library/google.svg) |
-| Google Maps | `google-maps.svg` | [`googleMaps.svg`](https://svgl.app/library/googleMaps.svg) |
-| YouTube | `youtube.svg` | [`youtube.svg`](https://svgl.app/library/youtube.svg) |
-| ChatGPT | `openai-light.svg`, `openai-dark.svg` | [`openai.svg`](https://svgl.app/library/openai.svg), [`openai_dark.svg`](https://svgl.app/library/openai_dark.svg) |
-| Claude | `claude.svg` | [`claude-ai-icon.svg`](https://svgl.app/library/claude-ai-icon.svg) |
-| Perplexity | `perplexity.svg` | [`perplexity.svg`](https://svgl.app/library/perplexity.svg) |
-| X | `x-light.svg`, `x-dark.svg` | [`x.svg`](https://svgl.app/library/x.svg), [`x_dark.svg`](https://svgl.app/library/x_dark.svg) |
-| Yahoo | Local `Y!` fallback | No Yahoo entry was returned by the SVGL search API on 2026-11-19. |
+| Provider    | Bundled asset                         | SVGL source                                                                                                        |
+| ----------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Google      | `google.svg`                          | [`google.svg`](https://svgl.app/library/google.svg)                                                                |
+| Google Maps | `google-maps.svg`                     | [`googleMaps.svg`](https://svgl.app/library/googleMaps.svg)                                                        |
+| YouTube     | `youtube.svg`                         | [`youtube.svg`](https://svgl.app/library/youtube.svg)                                                              |
+| ChatGPT     | `openai-light.svg`, `openai-dark.svg` | [`openai.svg`](https://svgl.app/library/openai.svg), [`openai_dark.svg`](https://svgl.app/library/openai_dark.svg) |
+| Claude      | `claude.svg`                          | [`claude-ai-icon.svg`](https://svgl.app/library/claude-ai-icon.svg)                                                |
+| Perplexity  | `perplexity.svg`                      | [`perplexity.svg`](https://svgl.app/library/perplexity.svg)                                                        |
+| X           | `x-light.svg`, `x-dark.svg`           | [`x.svg`](https://svgl.app/library/x.svg), [`x_dark.svg`](https://svgl.app/library/x_dark.svg)                     |
+| Yahoo       | Local `Y!` fallback                   | No Yahoo entry was returned by the SVGL search API on 2026-11-19.                                                  |

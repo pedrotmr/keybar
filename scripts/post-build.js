@@ -14,12 +14,14 @@ const manifest = JSON.parse(fs.readFileSync(sourceManifestPath, 'utf8'));
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
 const artifacts = JSON.parse(fs.readFileSync(path.join(projectRoot, 'extension-artifacts.json'), 'utf8'));
 const noticesPath = artifacts.notices;
+const providerIconResources = 'assets/provider-icons/*.svg';
+const providerIconDirectory = path.join(distDir, 'assets', 'provider-icons');
 manifest.version = packageMetadata.version;
 manifest.web_accessible_resources = [
   {
     resources: [
       ...Object.values(artifacts.fonts.families).flatMap((family) => family.faces.map((face) => face.path)),
-      'assets/*.svg',
+      providerIconResources,
     ],
     matches: artifacts.fonts.matches,
   },
@@ -33,13 +35,14 @@ if (!fs.existsSync(path.join(distDir, artifacts.popupHtml))) {
 }
 const exposedResources = manifest.web_accessible_resources?.flatMap((entry) => entry.resources) ?? [];
 const fontResources = exposedResources.filter((file) => file.startsWith('assets/fonts/'));
-const hasProviderIconResources = exposedResources.includes('assets/*.svg');
-const hasBundledProviderIcons = fs.readdirSync(path.join(distDir, 'assets')).some((file) => file.endsWith('.svg'));
+const hasProviderIconResources = exposedResources.includes(providerIconResources);
+const hasBundledProviderIcons =
+  fs.existsSync(providerIconDirectory) && fs.readdirSync(providerIconDirectory).some((file) => file.endsWith('.svg'));
 if (
   !hasProviderIconResources ||
   !hasBundledProviderIcons ||
   fontResources.some((file) => !fs.existsSync(path.join(distDir, file))) ||
-  exposedResources.some((file) => !file.startsWith('assets/fonts/') && file !== 'assets/*.svg')
+  exposedResources.some((file) => !file.startsWith('assets/fonts/') && file !== providerIconResources)
 ) {
   throw new Error('Build output is missing an exposed UI font or provider icon asset.');
 }
