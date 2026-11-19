@@ -6,7 +6,7 @@ Every search provider must declare an `iconAsset` in `src/utils/searchProviders.
 
 Use the provider's SVG from [SVGL](https://svgl.app/) when one is listed. Bundle the SVG locally under `src/assets/provider-icons/`; do not load logos from SVGL at runtime. When SVGL offers separate light and dark assets, register both and select them with the existing appearance theme. Add the exact SVGL asset URL to the source list below.
 
-All provider logos use the shared centered, aspect-preserving icon slot in `global.css`, with an inset from the slot edges. New providers should use that renderer as-is; do not add per-provider size or position overrides for ordinary SVG viewBoxes.
+All provider logos use the shared centered, aspect-preserving icon slot in `global.css`, with an inset from the slot edges. New providers should use that renderer as-is; do not add per-provider size overrides. If a logo still looks optically off-center inside a correctly centered viewBox, add a small `opticalOffsetY` in `ProviderGlyph.tsx`; it will apply in every icon slot.
 
 If SVGL has no matching logo, use a neutral fallback or a clearly documented local mark. Do not draw a lookalike brand logo and present it as the official mark.
 

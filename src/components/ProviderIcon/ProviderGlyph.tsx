@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import googleLogo from '@/assets/provider-icons/google.svg?url&no-inline';
 import googleMapsLogo from '@/assets/provider-icons/google-maps.svg?url&no-inline';
 import youtubeLogo from '@/assets/provider-icons/youtube.svg?url&no-inline';
@@ -24,28 +25,43 @@ const logos: Record<SearchProviderIconAsset, ProviderLogo> = {
   yahoo: null,
 };
 
+// Maps' pin is geometrically centered but its pointed tail makes its visual center sit low.
+const opticalOffsetY: Partial<Record<SearchProviderIconAsset, string>> = {
+  'google-maps': '-12%',
+};
+
 interface ProviderGlyphProps {
   id: SearchProviderIconAsset;
 }
 
-function ProviderLogoImage({ src, className }: { src: string; className?: string }) {
+function ProviderLogoImage({
+  src,
+  className,
+  offsetY,
+}: {
+  src: string;
+  className?: string;
+  offsetY?: string;
+}) {
   const resourcePath = src.replace(/^\/+/, '');
+  const style = offsetY ? ({ '--provider-logo-offset-y': offsetY } as CSSProperties) : undefined;
 
-  return <img src={chrome.runtime.getURL(resourcePath)} className={className} alt="" draggable={false} />;
+  return <img src={chrome.runtime.getURL(resourcePath)} className={className} style={style} alt="" draggable={false} />;
 }
 
 export function ProviderGlyph({ id }: ProviderGlyphProps) {
   const logo = logos[id];
+  const offsetY = opticalOffsetY[id];
 
   if (typeof logo === 'string') {
-    return <ProviderLogoImage src={logo} />;
+    return <ProviderLogoImage src={logo} offsetY={offsetY} />;
   }
 
   if (logo) {
     return (
       <>
-        <ProviderLogoImage src={logo.light} className="provider-logo-light" />
-        <ProviderLogoImage src={logo.dark} className="provider-logo-dark" />
+        <ProviderLogoImage src={logo.light} className="provider-logo-light" offsetY={offsetY} />
+        <ProviderLogoImage src={logo.dark} className="provider-logo-dark" offsetY={offsetY} />
       </>
     );
   }

@@ -372,6 +372,7 @@ select:focus-visible {
   height: 88%;
   object-fit: contain;
   object-position: center;
+  transform: translateY(var(--provider-logo-offset-y, 0));
 }
 .provider-mark .provider-logo-dark {
   display: none;
