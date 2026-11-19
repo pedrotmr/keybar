@@ -17,7 +17,10 @@ const noticesPath = artifacts.notices;
 manifest.version = packageMetadata.version;
 manifest.web_accessible_resources = [
   {
-    resources: Object.values(artifacts.fonts.families).flatMap((family) => family.faces.map((face) => face.path)),
+    resources: [
+      ...Object.values(artifacts.fonts.families).flatMap((family) => family.faces.map((face) => face.path)),
+      'assets/*.svg',
+    ],
     matches: artifacts.fonts.matches,
   },
 ];
@@ -29,8 +32,16 @@ if (!fs.existsSync(path.join(distDir, artifacts.popupHtml))) {
   throw new Error('Build output is missing the native extension popup.');
 }
 const exposedResources = manifest.web_accessible_resources?.flatMap((entry) => entry.resources) ?? [];
-if (exposedResources.some((file) => !file.startsWith('assets/fonts/') || !fs.existsSync(path.join(distDir, file)))) {
-  throw new Error('Build output is missing an exposed UI font asset.');
+const fontResources = exposedResources.filter((file) => file.startsWith('assets/fonts/'));
+const hasProviderIconResources = exposedResources.includes('assets/*.svg');
+const hasBundledProviderIcons = fs.readdirSync(path.join(distDir, 'assets')).some((file) => file.endsWith('.svg'));
+if (
+  !hasProviderIconResources ||
+  !hasBundledProviderIcons ||
+  fontResources.some((file) => !fs.existsSync(path.join(distDir, file))) ||
+  exposedResources.some((file) => !file.startsWith('assets/fonts/') && file !== 'assets/*.svg')
+) {
+  throw new Error('Build output is missing an exposed UI font or provider icon asset.');
 }
 const contentBundles = Object.values(artifacts.contentSurfaces).map((surface) => surface.file);
 if (contentBundles.some((file) => !fs.existsSync(path.join(distDir, file)))) {

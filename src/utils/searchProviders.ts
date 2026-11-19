@@ -5,6 +5,16 @@ export interface SearchProviderAccent {
   dark: string;
 }
 
+export type SearchProviderIconAsset =
+  | 'google'
+  | 'google-maps'
+  | 'youtube'
+  | 'openai'
+  | 'claude'
+  | 'perplexity'
+  | 'x'
+  | 'yahoo';
+
 interface SearchProviderIdentity {
   id: string;
   name: string;
@@ -19,6 +29,7 @@ interface SearchProviderDestination {
 interface SearchProviderPresentation {
   hint: string;
   verb: 'Search' | 'Ask';
+  iconAsset: SearchProviderIconAsset;
   // Brand tints for the provider chip, mark tile and empty state; each pair is used only behind or around the mark.
   accent: SearchProviderAccent;
 }
@@ -50,6 +61,7 @@ export const searchProviders: SearchProviderDefinition[] = [
     urlTemplate: 'https://www.google.com/search?q=%s',
     hint: 'Search the web',
     verb: 'Search',
+    iconAsset: 'google',
     accent: { light: '#1a73e8', dark: '#8ab4f8' },
   },
   {
@@ -60,6 +72,7 @@ export const searchProviders: SearchProviderDefinition[] = [
     urlTemplate: 'https://www.google.com/maps/search/?api=1&query=%s',
     hint: 'Search places and addresses',
     verb: 'Search',
+    iconAsset: 'google-maps',
     accent: { light: '#1a73e8', dark: '#8ab4f8' },
   },
   {
@@ -70,6 +83,7 @@ export const searchProviders: SearchProviderDefinition[] = [
     urlTemplate: 'https://www.youtube.com/results?search_query=%s',
     hint: 'Search videos',
     verb: 'Search',
+    iconAsset: 'youtube',
     accent: { light: '#e0001e', dark: '#ff5c6c' },
   },
   {
@@ -80,6 +94,7 @@ export const searchProviders: SearchProviderDefinition[] = [
     urlTemplate: 'https://chatgpt.com/?q=%s',
     hint: 'Open ChatGPT with a question',
     verb: 'Ask',
+    iconAsset: 'openai',
     accent: { light: '#10a37f', dark: '#4fd1a8' },
   },
   {
@@ -90,6 +105,7 @@ export const searchProviders: SearchProviderDefinition[] = [
     urlTemplate: 'https://claude.ai/new?q=%s',
     hint: 'Open Claude with a question',
     verb: 'Ask',
+    iconAsset: 'claude',
     accent: { light: '#c8623f', dark: '#e98d6b' },
   },
   {
@@ -100,6 +116,7 @@ export const searchProviders: SearchProviderDefinition[] = [
     urlTemplate: 'https://www.perplexity.ai/search?q=%s',
     hint: 'Get an answer with sources',
     verb: 'Ask',
+    iconAsset: 'perplexity',
     accent: { light: '#1b7f8c', dark: '#2fc1d3' },
   },
   {
@@ -110,6 +127,7 @@ export const searchProviders: SearchProviderDefinition[] = [
     urlTemplate: 'https://x.com/search?q=%s',
     hint: 'Search posts',
     verb: 'Search',
+    iconAsset: 'x',
     accent: { light: '#0f1419', dark: '#e7e9ea' },
   },
   {
@@ -120,6 +138,7 @@ export const searchProviders: SearchProviderDefinition[] = [
     urlTemplate: 'https://search.yahoo.com/search?p=%s',
     hint: 'Search Yahoo',
     verb: 'Search',
+    iconAsset: 'yahoo',
     accent: { light: '#6001d2', dark: '#b18cff' },
   },
 ];

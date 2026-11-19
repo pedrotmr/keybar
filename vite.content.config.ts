@@ -30,6 +30,7 @@ export function contentConfig(surface: 'commands' | 'tabs') {
       rollupOptions: {
         output: {
           inlineDynamicImports: true,
+          assetFileNames: 'assets/[name]-[hash][extname]',
         },
       },
     },
