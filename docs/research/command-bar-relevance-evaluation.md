@@ -4,9 +4,11 @@
 
 ## Scope and assumptions
 
-The fixture contains 27 synthetic tasks over the Command Bar's current command registry, five synthetic open tabs (including a renamed tab and a tab in another window), three synthetic bookmarks, two synthetic history entries, explicit provider handoffs, a direct URL, and an unmatched web-search fallback. It contains no real browsing titles, URLs, bookmarks, history, or user queries.
+The fixture contains 27 synthetic tasks over the Command Bar's current command registry, five synthetic open tabs (including a renamed tab and a tab in another window), three synthetic bookmarks, two synthetic history entries, explicit provider handoffs, a direct URL, and an unmatched web-search fallback. It contains no real user browsing data or queries. Its fixed URLs include reserved `example.test` addresses and public MDN and TypeScript documentation URLs used as synthetic inputs.
 
-Expected results are chosen from each task's intended destination. The set is deliberately a diagnostic seed, not a representative sample of real user behavior: inputs and expected results were authored from the code and issue brief, not collected from users. The run checks whether the expected item appears first and within the first five results; it does not measure task completion time or user preference. Bookmark and history entries are included directly because their live sources require optional Chrome permissions.
+Expected results are chosen from each task's intended destination. For the `weekend porto` case, `toTabItems` uses the custom name `Weekend in Porto` as the result title and keeps the original `Hotel booking overview` title and URL in its subtitle. Bookmark and history fixtures carry their URL in both `subtitle` and `url`; the ranker searches those fields in addition to the title. The set is deliberately a diagnostic seed, not a representative sample of real user behavior: inputs and expected results were authored from the code and issue brief, not collected from users. The run checks whether the expected item appears first and within the first five results; it does not measure task completion time or user preference. Bookmark and history entries are included directly because their live sources require optional Chrome permissions.
+
+This reports settled search: the saved-page fixtures are already loaded when `searchItems` runs. The live palette does not show its fallback while saved pages are still loading, so the reported Google fallback rank applies after loading completes.
 
 The fixture does not include duplicate tabs, bookmarks, or history entries with the same title or URL. Each item ID is distinct, so tie-breaking between duplicate results remains untested.
 
@@ -31,7 +33,7 @@ npm run evaluate:relevance
 | `downloads` | `open-downloads` | Command | 1 | Yes | Yes |
 | `keyboard shortcuts` | `open-shortcuts` | Command | 1 | Yes | Yes |
 | `preferences` | `open-chrome-settings` | Command | 1 | Yes | Yes |
-| `clear cache` | `hard-reload-tab` | Command | 1 | Yes | Yes |
+| `clear cache` | `hard-reload-tab` (bypass-cache reload) | Command | 1 | Yes | Yes |
 | `quarterly roadmap` | `tab-201` | Tab | 1 | Yes | Yes |
 | `invoice pdf` | `tab-202` | Tab | 1 | Yes | Yes |
 | `rust async` | `tab-203` | Tab | 1 | Yes | Yes |
@@ -48,11 +50,11 @@ npm run evaluate:relevance
 | `https://developer.mozilla.org/en-US/docs/Web/CSS/grid` | `navigate-url` | Direct navigation | 1 | Yes | Yes |
 | `quantum computing basics` | `search-google` | Fallback search | 1 | Yes | Yes |
 
-The expected item ranked first in **26/27** tasks and appeared in the first five in **26/27**. Commands were 12/12 top-one, tabs 5/5, bookmarks 3/3, history 2/2, direct navigation 1/1, and search actions 3/4. Excluding the provider-trigger case below, all 23 local command/tab/bookmark/history/navigation tasks placed the expected result first.
+The expected item ranked first in **26/27** tasks and appeared in the first five in **26/27**. Commands were 12/12 top-one, tabs 5/5, bookmarks 3/3, history 2/2, direct navigation 1/1, and search actions 3/4. This fixture returns at most three matches per query, so top-five success means the expected result appeared somewhere in the returned set; it does not test ordering among five or more candidates. Excluding the provider-trigger case below, all 23 local command/tab/bookmark/history/navigation tasks placed the expected result first.
 
 ## Findings and follow-ups
 
-- **Known provider-trigger miss:** `youtube cats` produces the generic Google fallback because provider handoff currently recognizes the provider's exact prefix (`yt`), not the full provider name. This is concrete and already scoped by [issue #30](https://github.com/pedrotmr/keybar/issues/30); keep the fix there rather than changing ranking in this evaluation.
+- **Known provider-dispatch miss:** `youtube cats` produces the generic Google fallback because this evaluator's current provider handoff recognizes the exact prefix (`yt`), not the full provider name. This is dispatch behavior, not a ranking defect. Recognizing a full provider name before a query is a candidate follow-up in [issue #30](https://github.com/pedrotmr/keybar/issues/30), but it can turn ordinary text such as `youtube cats` into a handoff. The product should require clear commitment or explicit provider selection; implementation belongs in #30, not this evaluation.
 - **No additional ranking defect surfaced in this seed.** The synthetic local cases all ranked their intended result first. This is evidence about these authored scenarios only, not a claim that real-user relevance is solved.
 - **Next useful evidence:** expand the fixture with real, consented or explicitly synthetic query examples that contain overlapping titles, URL-only matches, typos, and ambiguous commands. Keep each expected result tied to a clearly stated task so ambiguous cases are not scored as objective failures.
 

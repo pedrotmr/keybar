@@ -126,7 +126,7 @@ try {
     },
   ];
 
-  const items = [...tabs, ...savedPages, ...commands];
+  const items = [...commands, ...tabs, ...savedPages];
   const cases = [
     ['Open a new tab', 'new tab', 'new-tab', 'command'],
     ['Open a browser window', 'new window', 'new-window', 'command'],
@@ -139,7 +139,7 @@ try {
     ['Open Chrome downloads', 'downloads', 'open-downloads', 'command'],
     ['Manage extension shortcuts', 'keyboard shortcuts', 'open-shortcuts', 'command'],
     ['Open browser preferences', 'preferences', 'open-chrome-settings', 'command'],
-    ['Clear cache and reload', 'clear cache', 'hard-reload-tab', 'command'],
+    ['Reload the current page while bypassing the cache', 'clear cache', 'hard-reload-tab', 'command'],
     ['Open the quarterly roadmap tab', 'quarterly roadmap', 'tab-201', 'tab'],
     ['Find an invoice PDF tab', 'invoice pdf', 'tab-202', 'tab'],
     ['Find Rust async notes', 'rust async', 'tab-203', 'tab'],
@@ -150,26 +150,60 @@ try {
     ['Open Vite configuration documentation', 'vite config', 'bookmark-vite', 'bookmark'],
     ['Revisit a tax return page', 'tax return', 'history-tax-return', 'history'],
     ['Revisit gardening research', 'gardening ideas', 'history-gardening', 'history'],
-    ['Search YouTube for lo-fi music', 'yt lo-fi music', 'search-youtube', 'search'],
-    ['Search YouTube using its full name', 'youtube cats', 'search-youtube', 'search'],
-    ['Ask ChatGPT about focus time', 'ai focus time', 'search-chatgpt', 'search'],
+    [
+      'Search YouTube for lo-fi music',
+      'yt lo-fi music',
+      'search-youtube',
+      'search',
+      'https://www.youtube.com/results?search_query=lo-fi%20music',
+    ],
+    [
+      'Search YouTube using its full name',
+      'youtube cats',
+      'search-youtube',
+      'search',
+      'https://www.youtube.com/results?search_query=cats',
+    ],
+    [
+      'Ask ChatGPT about focus time',
+      'ai focus time',
+      'search-chatgpt',
+      'search',
+      'https://chatgpt.com/?q=focus%20time',
+    ],
     [
       'Navigate directly to a documentation URL',
       'https://developer.mozilla.org/en-US/docs/Web/CSS/grid',
       'navigate-url',
       'url',
+      'https://developer.mozilla.org/en-US/docs/Web/CSS/grid',
     ],
-    ['Fall back to web search for an unmatched query', 'quantum computing basics', 'search-google', 'search'],
+    [
+      'Fall back to web search for an unmatched query',
+      'quantum computing basics',
+      'search-google',
+      'search',
+      'https://www.google.com/search?q=quantum%20computing%20basics',
+    ],
   ];
 
-  const results = cases.map(([task, query, expectedId, resultType]) => {
+  const results = cases.map(([task, query, expectedId, resultType, expectedDestination]) => {
     const ranked = searchItems(items, query);
-    const expectedIndex = ranked.findIndex((item) => item.id === expectedId);
+    const expectedIdCandidate = ranked.find((item) => item.id === expectedId);
+    const expectedIndex = ranked.findIndex(
+      (item) =>
+        item.id === expectedId &&
+        item.type === resultType &&
+        (expectedDestination === undefined || item.url === expectedDestination),
+    );
     return {
       task,
       query,
       expectedId,
       resultType,
+      expectedDestination: expectedDestination ?? null,
+      observedType: expectedIdCandidate?.type ?? null,
+      observedDestination: expectedIdCandidate?.url ?? null,
       rank: expectedIndex < 0 ? null : expectedIndex + 1,
       top1: expectedIndex === 0,
       top5: expectedIndex >= 0 && expectedIndex < 5,
