@@ -1,14 +1,10 @@
-import { parseProviderQuery } from '@/utils/searchProviders';
-
 interface HighlightedTextProps {
   text: string;
-  query: string;
-  providerSearchMode: boolean;
+  highlightQuery: string;
 }
 
-export function HighlightedText({ text, query, providerSearchMode }: HighlightedTextProps) {
-  const searchTerm = providerSearchMode ? query : (parseProviderQuery(query)?.query ?? query);
-  const terms = [...new Set(searchTerm.trim().split(/\s+/).filter(Boolean))];
+export function HighlightedText({ text, highlightQuery }: HighlightedTextProps) {
+  const terms = [...new Set(highlightQuery.trim().split(/\s+/).filter(Boolean))];
 
   if (!terms.length) {
     return <>{text}</>;
