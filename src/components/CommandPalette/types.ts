@@ -88,7 +88,6 @@ interface CommandPaletteSearchViewState {
   showResults: boolean;
   isCompactEmpty: boolean;
   isUnfilteredExpandedView: boolean;
-  isLoadingInitialTabs: boolean;
 }
 
 interface CommandPaletteSearchAnnouncements {

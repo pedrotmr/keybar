@@ -91,6 +91,19 @@ export const validateRequest = (
       requireString('name');
       break;
 
+    case 'tabs:set-strip-title':
+      requirePositiveId('tabId');
+      requireString('name');
+      requireString('origin');
+      break;
+
+    case 'tabs:clear-strip-title':
+      requirePositiveId('tabId');
+      requireString('originalTitle');
+      requireString('customName');
+      requireString('origin');
+      break;
+
     case 'tabs:move':
       requirePositiveId('tabId');
       requirePositiveId('windowId');

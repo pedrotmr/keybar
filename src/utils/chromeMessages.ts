@@ -83,6 +83,15 @@ interface TabOrganizationMessages {
       stripReason?: string;
     };
   };
+  /** Inject/clear document.title only — no storage, no session init. */
+  'tabs:set-strip-title': {
+    request: { tabId: number; name: string; origin: string };
+    response: { success: boolean; reason?: string };
+  };
+  'tabs:clear-strip-title': {
+    request: { tabId: number; originalTitle: string; customName: string; origin: string };
+    response: { success: boolean; reason?: string };
+  };
   'tabs:title-bfcache-check': { request: EmptyPayload; response: { customName?: string; restore?: boolean } };
   'tabs:move-active-new-window': { request: EmptyPayload; response: boolean };
   'tabs:move-new-window': { request: { tabId: number }; response: boolean };
@@ -224,6 +233,8 @@ export const BACKGROUND_ACTIONS = [
   'tabs:recent-previews',
   'tabs:close-confirmed',
   'tabs:rename',
+  'tabs:set-strip-title',
+  'tabs:clear-strip-title',
   'tabs:title-bfcache-check',
   'tabs:move-new-window',
   'tabs:move',

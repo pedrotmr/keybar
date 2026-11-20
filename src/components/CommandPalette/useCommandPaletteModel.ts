@@ -14,6 +14,7 @@ import { useSavedPages } from './useSavedPages';
 import { usePaletteTabs } from './usePaletteTabs';
 import { getCommands } from '@/utils/commands';
 import { bulkCloseTabIds, isBulkCloseAction } from '@/utils/bulkClose';
+import { applyStripTitleNow } from '@/utils/applyStripTitleNow';
 import { normalizeNavigationUrl, sendBackground } from '@/utils/chromeHelpers';
 import { writeClipboardText } from '@/utils/clipboard';
 import { findProviderQueryMatch, getSearchProviderSuggestions, parseProviderQuery } from '@/utils/searchProviders';
@@ -131,7 +132,6 @@ export const useCommandPaletteModel = ({
 
   const {
     tabs,
-    tabsReady,
     currentTabId,
     currentWindowId,
     permissions,
@@ -140,6 +140,7 @@ export const useCommandPaletteModel = ({
     setGroups,
     splitCapabilities,
     refreshTabs,
+    patchTab,
   } = usePaletteTabs({ surface, notify });
 
   const { bookmarks, history, localDataLoading, localDataLoaded, loadLocalData } = useSavedPages(permissions, notify);
@@ -337,10 +338,6 @@ export const useCommandPaletteModel = ({
       return [];
     }
 
-    if (mode === 'commands' && !query.trim() && !activeProvider && !tabsReady) {
-      return [];
-    }
-
     const start = performance.now();
     const allowFallback = !localDataLoading && !isStandaloneCanonicalProviderShortcut;
     const searchableItems = !query.trim() && mode === 'commands' ? initialItems : sourceItems;
@@ -380,7 +377,6 @@ export const useCommandPaletteModel = ({
     providerCandidates,
     isStandaloneCanonicalProviderShortcut,
     localDataLoading,
-    tabsReady,
   ]);
 
   useEffect(() => {
@@ -390,9 +386,6 @@ export const useCommandPaletteModel = ({
   const activeIndex = Math.min(selectedIndex, Math.max(0, results.length - 1));
   const isCompactEmpty =
     mode === 'commands' && preferences.windowMode === 'compact' && !query.trim() && !activeProvider;
-
-  const isLoadingInitialTabs =
-    mode === 'commands' && preferences.windowMode === 'expanded' && !query.trim() && !activeProvider && !tabsReady;
 
   const showResults = mode === 'commands' && !isCompactEmpty;
   const selectedItem = showResults ? results[activeIndex] : undefined;
@@ -954,42 +947,66 @@ export const useCommandPaletteModel = ({
       }
 
       if (dialog.kind === 'rename') {
-        const result = await sendBackground('tabs:rename', {
-          tabId: dialog.tabId,
-          name: renameValue,
+        const tabId = dialog.tabId;
+        const nextName = renameValue.trim();
+        const previousTab = tabs.find((tab) => tab.id === tabId);
+        const previousCustomName = previousTab?.customName;
+        const previousOriginalTitle = previousTab?.originalTitle;
+
+        // Paint Keybar + Chrome's tab strip immediately (do not wait on storage).
+        patchTab(tabId, {
+          customName: nextName || undefined,
+          originalTitle: nextName
+            ? (previousOriginalTitle ?? previousTab?.title ?? previousTab?.url)
+            : previousOriginalTitle,
         });
-        await refreshTabs();
-
-        if (!renameValue.trim()) {
-          if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
-            setDialogError(
-              result.stripReason === 'site-access-required'
-                ? 'Could not remove the custom title from Chrome’s tab strip. Approve access, then try again.'
-                : 'Could not remove the custom title from Chrome’s tab strip. Try again.',
-            );
-            return;
-          }
-
-          await closeDialog();
-          notify('Custom tab name removed.', 'success');
-          return;
-        }
-
+        void applyStripTitleNow(tabId, nextName, previousTab?.url, {
+          surface,
+          isCurrentTab: previousTab?.id === currentTabId,
+          previousCustomName,
+          originalTitle: previousOriginalTitle ?? previousTab?.title,
+        });
         await closeDialog();
+        notify(nextName ? 'Tab name saved.' : 'Custom tab name removed.', 'success');
 
-        if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
-          notify(
-            result.record?.showInTabStrip
-              ? 'Chrome’s tab strip could not be updated. The previous custom title is still active.'
-              : result.stripReason === 'unsupported-page'
-                ? 'Tab name saved in Keybar. This page cannot show a custom title in Chrome’s tab strip.'
-                : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
-            result.record?.showInTabStrip ? 'error' : 'success',
-          );
-          return;
-        }
+        void sendBackground('tabs:rename', { tabId, name: renameValue })
+          .then((result) => {
+            if (!nextName) {
+              if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
+                patchTab(tabId, { customName: previousCustomName, originalTitle: previousOriginalTitle });
+                notify(
+                  result.stripReason === 'site-access-required'
+                    ? 'Could not remove the custom title from Chrome’s tab strip. Approve access, then try again.'
+                    : 'Could not remove the custom title from Chrome’s tab strip. Try again.',
+                );
+              }
 
-        notify('Tab name saved.', 'success');
+              return;
+            }
+
+            if (result.record) {
+              patchTab(tabId, {
+                customName: result.record.customName,
+                originalTitle: result.record.originalTitle,
+              });
+            }
+
+            if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
+              notify(
+                result.record?.showInTabStrip
+                  ? 'Chrome’s tab strip could not be updated. The previous custom title is still active.'
+                  : result.stripReason === 'unsupported-page'
+                    ? 'Tab name saved in Keybar. This page cannot show a custom title in Chrome’s tab strip.'
+                    : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
+                result.record?.showInTabStrip ? 'error' : 'success',
+              );
+            }
+          })
+          .catch((error: unknown) => {
+            patchTab(tabId, { customName: previousCustomName, originalTitle: previousOriginalTitle });
+            notify(error instanceof Error ? error.message : 'Could not rename that tab.');
+          });
+
         return;
       }
 
@@ -1046,10 +1063,13 @@ export const useCommandPaletteModel = ({
       return;
     }
 
+    const nextPinned = !tab.pinned;
+    patchTab(tab.id, { pinned: nextPinned });
+
     try {
-      await sendBackground('tabs:pin', { tabId: tab.id, pinned: !tab.pinned });
-      await refreshTabs();
+      await sendBackground('tabs:pin', { tabId: tab.id, pinned: nextPinned });
     } catch (error) {
+      patchTab(tab.id, { pinned: tab.pinned });
       notify(error instanceof Error ? error.message : 'Could not change the pin state.');
     }
   };
@@ -1059,10 +1079,18 @@ export const useCommandPaletteModel = ({
       return;
     }
 
+    const nextMuted = !tab.mutedInfo?.muted;
+    const previousMutedInfo = tab.mutedInfo;
+    patchTab(tab.id, {
+      mutedInfo: previousMutedInfo
+        ? { ...previousMutedInfo, muted: nextMuted }
+        : { muted: nextMuted, reason: 'user' },
+    });
+
     try {
-      await sendBackground('tabs:mute', { tabId: tab.id, muted: !tab.mutedInfo?.muted });
-      await refreshTabs();
+      await sendBackground('tabs:mute', { tabId: tab.id, muted: nextMuted });
     } catch (error) {
+      patchTab(tab.id, { mutedInfo: previousMutedInfo });
       notify(error instanceof Error ? error.message : 'Could not change the audio state.');
     }
   };
@@ -1368,9 +1396,10 @@ export const useCommandPaletteModel = ({
       .catch((error) => notify(error instanceof Error ? error.message : 'Could not open keyboard shortcuts.'));
   };
 
-  const loadingState = isLoadingInitialTabs
-    ? { title: 'Loading your tabs', detail: 'Putting pinned tabs first.' }
-    : { title: 'Searching saved pages', detail: 'Checking bookmarks and recent history.' };
+  const loadingState = {
+    title: 'Searching saved pages',
+    detail: 'Checking bookmarks and recent history.',
+  };
 
   const actionDockItems = actionDock && actionDockTab && actionDockIndex >= 0 ? tabActionItems(actionDockTab) : [];
 
@@ -1395,7 +1424,6 @@ export const useCommandPaletteModel = ({
     activeIndex,
     keyboardNavigationVersion,
     localDataLoading,
-    isLoadingInitialTabs,
     emptyState,
     isUnfilteredExpandedView,
     isCompactEmpty,

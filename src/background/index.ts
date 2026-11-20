@@ -14,7 +14,9 @@ import {
   installTabSwitcherKeyReleaseMonitorInPage,
   type TabSwitcherReleaseKey,
 } from '@/utils/tabSwitcherKeyRelease';
+import { PALETTE_TABS_SNAPSHOT_KEY, type PaletteTabsSnapshot } from '@/utils/paletteTabsSnapshot';
 import artifacts from '../../extension-artifacts.json';
+import { applyPageTitleOverride, restorePageTitleOverride } from '@/utils/pageTitleOverride';
 import {
   getBfcacheTitleDecision,
   getTabNames,
@@ -609,12 +611,10 @@ const handleRequest = async (
   const message = validateRequest(rawMessage, sender, chrome.runtime.id);
   const action = message.action;
 
-  if (
-    action === 'tabs:list' ||
-    action === 'tabs:recent' ||
-    action === 'tabs:rename' ||
-    action === 'tabs:duplicate-active'
-  ) {
+  // Rename/duplicate need session name state. Listing must stay fast so pinned tabs
+  // can paint without waiting on strip-title reinjection or first-session reconcile.
+  // Strip-title inject/clear stays unblocked so Chrome's tab title can update immediately.
+  if (action === 'tabs:rename' || action === 'tabs:duplicate-active') {
     await tabNameSessionInitialization;
   }
 
@@ -721,6 +721,27 @@ const handleRequest = async (
 
     case 'tabs:rename':
       return typedBackgroundResult(action, renameTab(message.tabId, message.name));
+
+    case 'tabs:set-strip-title': {
+      const applied = await applyPageTitleOverride(message.tabId, message.name, message.origin);
+      return typedBackgroundResult(
+        action,
+        applied.success ? { success: true } : { success: false, reason: applied.reason },
+      );
+    }
+
+    case 'tabs:clear-strip-title': {
+      const restored = await restorePageTitleOverride(
+        message.tabId,
+        message.originalTitle,
+        message.customName,
+        message.origin,
+      );
+      return typedBackgroundResult(
+        action,
+        restored.success ? { success: true } : { success: false, reason: restored.reason },
+      );
+    }
 
     case 'tabs:title-bfcache-check': {
       const tabId = asPositiveInteger(sender.tab?.id);
@@ -1175,7 +1196,7 @@ const listTabs = async (): Promise<
     }),
   );
 
-  return tabs
+  const listed = tabs
     .filter(
       (tab) =>
         tab.id !== undefined &&
@@ -1196,6 +1217,19 @@ const listTabs = async (): Promise<
         Number(b.active && b.windowId === focusedWindow.id) - Number(a.active && a.windowId === focusedWindow.id) ||
         (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0),
     );
+
+  const focusedActive = listed.find((tab) => tab.active && tab.windowId === focusedWindow.id);
+  void chrome.storage.session
+    .set({
+      [PALETTE_TABS_SNAPSHOT_KEY]: {
+        tabs: listed,
+        currentTabId: focusedActive?.id ?? null,
+        currentWindowId: typeof focusedWindow.id === 'number' ? focusedWindow.id : null,
+      } satisfies PaletteTabsSnapshot,
+    })
+    .catch(() => undefined);
+
+  return listed;
 };
 
 const activateTab = async (tabId: number, sourceTabId?: number): Promise<boolean> => {

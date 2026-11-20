@@ -61,24 +61,12 @@ export const resultPageSize = (list: HTMLElement): number => {
 
 export const initialResultLimit = (
   size: CommandBarSize,
-  surface: 'popup' | 'overlay',
-  viewport: PaletteViewport,
+  _surface: 'popup' | 'overlay',
+  _viewport: PaletteViewport,
 ): number => {
-  const overlayMaxHeights: Record<CommandBarSize, number> = { compact: 520, standard: 580, wide: 660 };
-  const popupHeights: Record<CommandBarSize, number> = { compact: 520, standard: 560, wide: 600 };
-  const panelHeight =
-    surface === 'overlay'
-      ? Math.min(overlayMaxHeights[size], viewport.height - (viewport.width <= 560 ? 24 : 48))
-      : popupHeights[size];
-
-  const panelBorder = surface === 'overlay' ? 2 : 0;
-  const searchHeight = surface === 'overlay' ? 58 : 56;
-  const listContentHeight = panelHeight - panelBorder - searchHeight - 20;
-  const rowHeight = surface === 'overlay' ? 44 : 42;
-  const rowPitch = rowHeight + 4;
-
-  // Cap the unfiltered opening view at seven rows and leave one row of slack for smaller screens.
-  return Math.max(1, Math.min(7, Math.floor(listContentHeight / rowPitch) - 1));
+  // Keep the opening list aligned with --cc-visible-result-rows in global.css.
+  const visibleRows: Record<CommandBarSize, number> = { compact: 7, standard: 8, wide: 9 };
+  return visibleRows[size];
 };
 
 export const flattenBookmarks = (
