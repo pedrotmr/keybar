@@ -289,7 +289,10 @@ export const searchItems = (
     url: fallbackProvider.urlTemplate.replace('%s', encodeURIComponent(normalized)),
   };
 
-  return [...matches, searchItem].slice(0, 100);
+  // Unmatched-query Google fallback sits above history, below other local matches.
+  const nonHistory = matches.filter((item) => item.type !== 'history');
+  const history = matches.filter((item) => item.type === 'history');
+  return [...nonHistory, searchItem, ...history].slice(0, 100);
 };
 
 export const searchProviderItems = (
