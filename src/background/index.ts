@@ -20,7 +20,6 @@ import {
   type PaletteTabsSnapshot,
 } from '@/utils/paletteTabsSnapshot';
 import artifacts from '../../extension-artifacts.json';
-import { applyPageTitleOverride, restorePageTitleOverride } from '@/utils/pageTitleOverride';
 import {
   getBfcacheTitleDecision,
   getTabNames,
@@ -748,27 +747,6 @@ const handleRequest = async (
 
     case 'tabs:rename':
       return typedBackgroundResult(action, renameTab(message.tabId, message.name));
-
-    case 'tabs:set-strip-title': {
-      const applied = await applyPageTitleOverride(message.tabId, message.name, message.origin);
-      return typedBackgroundResult(
-        action,
-        applied.success ? { success: true } : { success: false, reason: applied.reason },
-      );
-    }
-
-    case 'tabs:clear-strip-title': {
-      const restored = await restorePageTitleOverride(
-        message.tabId,
-        message.originalTitle,
-        message.customName,
-        message.origin,
-      );
-      return typedBackgroundResult(
-        action,
-        restored.success ? { success: true } : { success: false, reason: restored.reason },
-      );
-    }
 
     case 'tabs:title-bfcache-check': {
       const tabId = asPositiveInteger(sender.tab?.id);
