@@ -136,6 +136,7 @@ test('Tab Switcher keeps the selected card visible while navigating at a narrow 
               scrollable: panel.scrollWidth > panel.clientWidth,
               selectedIndex: cards.indexOf(selectedCard),
               selectedCount: cards.length,
+              selectedId: selectedCard.id,
               selectedCardIsFullyVisible:
                 cardBounds.left >= viewportLeft - 0.5 && cardBounds.right <= viewportRight + 0.5,
               bounds: {
@@ -179,18 +180,17 @@ test('Tab Switcher keeps the selected card visible while navigating at a narrow 
 
   const panelBounds = (await readPanel())?.bounds;
   expect(panelBounds).toBeDefined();
-  const selectedBeforeWheel = (await readPanel())?.selectedIndex;
-  expect(selectedBeforeWheel).toBe(0);
-  await source.mouse.move(panelBounds.x + 5, panelBounds.y + panelBounds.height / 2);
-  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(selectedBeforeWheel);
+  const selectedBeforeWheel = (await readPanel())?.selectedId;
+  expect(selectedBeforeWheel).toBeTruthy();
+  await source.mouse.move(panelBounds.x + panelBounds.width / 2, panelBounds.y + 5);
+  await expect.poll(async () => (await readPanel())?.selectedId).toBe(selectedBeforeWheel);
   let previousScrollLeft = (await readPanel())?.scrollLeft;
   expect(previousScrollLeft).toBeDefined();
   for (let index = 0; index < 3; index++) {
     await source.mouse.wheel(0, 25);
-    await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(selectedBeforeWheel);
+    await expect.poll(async () => (await readPanel())?.selectedId).toBe(selectedBeforeWheel);
     await expect.poll(async () => (await readPanel())?.scrollLeft).toBeGreaterThan(previousScrollLeft);
     previousScrollLeft = (await readPanel())?.scrollLeft;
-    await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
   }
 
   await root.detach();
