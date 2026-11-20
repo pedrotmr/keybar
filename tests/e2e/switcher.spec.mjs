@@ -125,6 +125,7 @@ test('Tab Switcher keeps the selected card visible while navigating at a narrow 
 
             const panelBounds = panel.getBoundingClientRect();
             const cardBounds = selectedCard.getBoundingClientRect();
+            const cards = Array.from(panel.querySelectorAll('[role="option"]'));
             const viewportLeft = panelBounds.left + panel.clientLeft;
             const viewportRight = viewportLeft + panel.clientWidth;
 
@@ -133,8 +134,8 @@ test('Tab Switcher keeps the selected card visible while navigating at a narrow 
               focused: shadowRoot.activeElement === panel,
               scrollLeft: panel.scrollLeft,
               scrollable: panel.scrollWidth > panel.clientWidth,
-              selectedLabel: selectedCard.getAttribute('aria-label'),
-              selectedIndex: Number.parseInt(selectedCard.getAttribute('aria-label') ?? '', 10) - 1,
+              selectedIndex: cards.indexOf(selectedCard),
+              selectedCount: cards.length,
               selectedCardIsFullyVisible:
                 cardBounds.left >= viewportLeft - 0.5 && cardBounds.right <= viewportRight + 0.5,
               bounds: {
@@ -156,24 +157,24 @@ test('Tab Switcher keeps the selected card visible while navigating at a narrow 
   await expect.poll(async () => (await readPanel())?.focused).toBe(true);
   await expect.poll(async () => (await readPanel())?.scrollable).toBe(true);
   await expect.poll(async () => (await readPanel())?.animationFinished).toBe(true);
-  const initiallySelectedLabel = (await readPanel())?.selectedLabel;
-  expect(initiallySelectedLabel).toBeTruthy();
+  const visibleTabCount = (await readPanel())?.selectedCount;
+  expect(visibleTabCount).toBeGreaterThan(1);
   await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
 
   await source.keyboard.press('Home');
   await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(0);
   await source.setViewportSize({ width: 1200, height: 800 });
   await source.keyboard.press('End');
-  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(6);
+  const lastSelectedIndex = visibleTabCount - 1;
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(lastSelectedIndex);
   await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
 
   await source.setViewportSize({ width: 600, height: 800 });
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(lastSelectedIndex);
   await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
 
-  const selectedBeforeArrow = (await readPanel())?.selectedIndex;
-  expect(selectedBeforeArrow).toBeDefined();
   await source.keyboard.press('ArrowRight');
-  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe((selectedBeforeArrow + 1) % 7);
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(0);
   await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
 
   const panelBounds = (await readPanel())?.bounds;
