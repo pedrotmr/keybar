@@ -959,19 +959,32 @@ export const useCommandPaletteModel = ({
           name: renameValue,
         });
         await refreshTabs();
-        await closeDialog();
 
         if (!renameValue.trim()) {
+          if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
+            setDialogError(
+              result.stripReason === 'site-access-required'
+                ? 'Could not remove the custom title from Chrome’s tab strip. Approve access, then try again.'
+                : 'Could not remove the custom title from Chrome’s tab strip. Try again.',
+            );
+            return;
+          }
+
+          await closeDialog();
           notify('Custom tab name removed.', 'success');
           return;
         }
 
+        await closeDialog();
+
         if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
           notify(
-            result.stripReason === 'unsupported-page'
-              ? 'Tab name saved in Keybar. This page cannot show a custom title in Chrome’s tab strip.'
-              : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
-            'success',
+            result.record?.showInTabStrip
+              ? 'Chrome’s tab strip could not be updated. The previous custom title is still active.'
+              : result.stripReason === 'unsupported-page'
+                ? 'Tab name saved in Keybar. This page cannot show a custom title in Chrome’s tab strip.'
+                : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
+            result.record?.showInTabStrip ? 'error' : 'success',
           );
           return;
         }

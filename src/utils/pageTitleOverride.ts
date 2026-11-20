@@ -12,15 +12,17 @@ export type TitleOverrideReason =
   | 'operation-failed';
 
 export type TitleOverrideResult =
-  | { success: true; originalTitle: string }
-  | { success: false; reason: TitleOverrideReason };
+  { success: true; originalTitle: string } | { success: false; reason: TitleOverrideReason };
 
 export type TitleRestoreResult = { success: true } | { success: false; reason: TitleOverrideReason };
 
-const normalizeTitle = (value: string): string => value.replace(/[\t\n\f\r ]+/g, ' ').trim();
+export const normalizeCustomTabTitle = (value: string): string => value.replace(/[\t\n\f\r ]+/g, ' ').trim();
 
 /** Injected into the page; must stay self-contained for executeScript. */
-function setPageTitle(customName: string, expectedOrigin: string): { applied: boolean; originalTitle?: string; reason?: string } {
+function setPageTitle(
+  customName: string,
+  expectedOrigin: string,
+): { applied: boolean; originalTitle?: string; reason?: string } {
   if (window.location.origin !== expectedOrigin) {
     return { applied: false, reason: 'origin-mismatch' };
   }
@@ -30,6 +32,7 @@ function setPageTitle(customName: string, expectedOrigin: string): { applied: bo
     originalTitle: string;
     customName: string;
     origin: string;
+    version: number;
     observer: MutationObserver | null;
     pageshowHandler: ((event: PageTransitionEvent) => void) | null;
   };
@@ -40,51 +43,79 @@ function setPageTitle(customName: string, expectedOrigin: string): { applied: bo
     originalTitle: document.title,
     customName,
     origin: expectedOrigin,
+    version: 0,
     observer: null,
     pageshowHandler: null,
   };
 
+  const priorCustomName = state.customName;
   state.customName = customName;
   state.origin = expectedOrigin;
+  state.version += 1;
   pageWindow[stateKey] = state;
-  document.title = customName;
+
+  // Finish observer/pageshow setup before changing the title so a missing HTML
+  // head (e.g. standalone SVG) cannot leave an applied title without tracking.
+  let createdObserver = false;
 
   if (!state.observer) {
+    createdObserver = true;
     state.observer = new MutationObserver(() => {
       if (window.location.origin === state.origin && document.title !== state.customName) {
         document.title = state.customName;
       }
     });
-    const titleElement = document.querySelector('head > title');
-    state.observer.observe(titleElement ?? document.head, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-    });
+    const observeTarget = document.head ?? document.documentElement;
+
+    if (observeTarget) {
+      state.observer.observe(observeTarget, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+    }
   }
 
+  let createdPageshow = false;
+
   if (!state.pageshowHandler) {
+    createdPageshow = true;
     state.pageshowHandler = (event: PageTransitionEvent) => {
       if (!event.persisted) {
         return;
       }
 
+      const pending = pageWindow[stateKey];
+
+      if (!pending) {
+        return;
+      }
+
+      // Invalidate in-flight replies from earlier renames, clears, or BFCache checks.
+      pending.version += 1;
+      const requestVersion = pending.version;
+      const requestState = pending;
+
       void chrome.runtime
         .sendMessage({ action: 'tabs:title-bfcache-check' })
-        .then((response: { customName?: string; restore?: boolean } | undefined) => {
+        .then((response: { success?: boolean; data?: { customName?: string; restore?: boolean } } | undefined) => {
           const current = pageWindow[stateKey];
 
-          if (!current) {
+          // Require the same state object and version so a clear/rename on another
+          // same-origin document cannot leave a stale reply free to reapply later.
+          if (!current || current !== requestState || current.version !== requestVersion) {
             return;
           }
 
-          if (response?.customName && window.location.origin === current.origin) {
-            current.customName = response.customName;
-            document.title = response.customName;
+          const decision = response?.success ? response.data : undefined;
+
+          if (decision?.customName && window.location.origin === current.origin) {
+            current.customName = decision.customName;
+            document.title = decision.customName;
             return;
           }
 
-          if (response?.restore) {
+          if (decision?.restore) {
             current.observer?.disconnect();
             if (current.pageshowHandler) {
               window.removeEventListener('pageshow', current.pageshowHandler);
@@ -99,20 +130,40 @@ function setPageTitle(customName: string, expectedOrigin: string): { applied: bo
     window.addEventListener('pageshow', state.pageshowHandler);
   }
 
+  document.title = customName;
+
+  // Some HTTP(S) documents (e.g. XML) accept the assignment but leave title unchanged.
+  if (document.title !== customName) {
+    if (createdObserver) {
+      state.observer?.disconnect();
+      state.observer = null;
+    }
+
+    if (createdPageshow && state.pageshowHandler) {
+      window.removeEventListener('pageshow', state.pageshowHandler);
+      state.pageshowHandler = null;
+    }
+
+    if (!existing) {
+      delete pageWindow[stateKey];
+    } else {
+      state.customName = priorCustomName;
+    }
+
+    return { applied: false, reason: 'unsupported-page' };
+  }
+
   return { applied: true, originalTitle: state.originalTitle };
 }
 
 /** Injected into the page; must stay self-contained for executeScript. */
-function restorePageTitle(
-  originalTitle: string,
-  customName: string,
-  expectedOrigin: string,
-): { restored: boolean } {
+function restorePageTitle(_storageTitle: string, _customName: string, expectedOrigin: string): { restored: boolean } {
   const stateKey = '__keybarTitleOverride';
   type PageState = {
     originalTitle: string;
     customName: string;
     origin: string;
+    version: number;
     observer: MutationObserver | null;
     pageshowHandler: ((event: PageTransitionEvent) => void) | null;
   };
@@ -120,21 +171,21 @@ function restorePageTitle(
   const pageWindow = window as unknown as Window & { [stateKey]?: PageState };
   const state = pageWindow[stateKey];
 
-  if (
-    window.location.origin !== expectedOrigin ||
-    !state ||
-    state.origin !== expectedOrigin ||
-    state.customName !== customName
-  ) {
+  // Clear any Keybar-owned override on this origin. A BFCache document may still
+  // hold an older customName than storage after same-origin navigation.
+  if (window.location.origin !== expectedOrigin || !state || state.origin !== expectedOrigin) {
     return { restored: false };
   }
 
+  // Bump so in-flight BFCache replies cannot reapply a cleared override.
+  state.version += 1;
   state.observer?.disconnect();
   if (state.pageshowHandler) {
     window.removeEventListener('pageshow', state.pageshowHandler);
   }
   delete pageWindow[stateKey];
-  document.title = originalTitle;
+  // Prefer the title captured for this document — storage may still hold a prior page's title.
+  document.title = state.originalTitle;
   return { restored: true };
 }
 
@@ -143,7 +194,7 @@ export const applyPageTitleOverride = async (
   customName: string,
   expectedOrigin: string,
 ): Promise<TitleOverrideResult> => {
-  const normalizedName = normalizeTitle(customName);
+  const normalizedName = normalizeCustomTabTitle(customName);
 
   if (!normalizedName) {
     return { success: false, reason: 'empty-title' };
@@ -205,7 +256,7 @@ export const restorePageTitleOverride = async (
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
       func: restorePageTitle,
-      args: [originalTitle, customName, expectedOrigin],
+      args: [originalTitle, normalizeCustomTabTitle(customName), expectedOrigin],
     });
 
     if (!result?.result?.restored) {

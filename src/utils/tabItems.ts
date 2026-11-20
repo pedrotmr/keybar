@@ -56,7 +56,7 @@ export const toTabItems = (
       return [];
     }
 
-    const originalTitle = tab.originalTitle || tab.title || tab.url || 'Untitled tab';
+    const originalTitle = tab.originalTitle ?? tab.title ?? tab.url ?? 'Untitled tab';
     const title = tab.customName || originalTitle;
     const details = [tab.customName ? originalTitle : '', tab.url || ''].filter(Boolean).join(' · ');
     const groupTitle =

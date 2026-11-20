@@ -1,6 +1,6 @@
 # Making custom names appear in Chrome's tab strip
 
-> **Superseded for shipping:** issue [#40](https://github.com/pedrotmr/keybar/issues/40) shipped required HTTP(S) `host_permissions` (Tab Renamer model), not the optional/activeTab-only path below. Keep this note as investigation history.
+> **Implementation note:** The branch for issue [#40](https://github.com/pedrotmr/keybar/issues/40) implements required HTTP(S) `host_permissions` (Tab Renamer model), not the optional/activeTab-only path researched below. Keep this note as investigation history.
 
 ## Recommendation
 
@@ -37,4 +37,4 @@ The prototype also shows the permission boundary: its popup requests the current
 
 Implemented without a separate checkbox: renaming a tab on a regular page sets `document.title` (Tab Renamer-style), using required HTTP(S) host permissions like Tab Renamer. Persist the original page title separately from the custom name. Ensure title-change events caused by Keybar do not overwrite the original title. Reattach after session restore only when Keybar's existing unique-match rule succeeds. Restore the original page title when the user clears the custom name.
 
-Decision (issue [#40](https://github.com/pedrotmr/keybar/issues/40)): Pedro chose option 2 — persistent tab-strip override with required HTTP(S) host access (Tab Renamer-style), accepting that page scripts can read the custom title.
+Decision (issue [#40](https://github.com/pedrotmr/keybar/issues/40)): Pedro first chose option 2 — persistent tab-strip override with optional per-origin host access, accepting that page scripts can read the custom title. After local testing showed optional permission prompts were unreliable, the implementation switched to required HTTP(S) host permissions (Tab Renamer-style).

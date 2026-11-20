@@ -21,6 +21,7 @@ import {
   handleClosedTabName,
   handleCreatedTabName,
   handleUpdatedTabName,
+  duplicateTabWithName,
   renameTab,
   tabNameSessionInitialization,
 } from './tabNames';
@@ -582,7 +583,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     void configureActionForTab(tabId, tab.url).catch(() => undefined);
   }
 
-  void handleUpdatedTabName(tabId, changeInfo, tab).catch(() => undefined);
+  void handleUpdatedTabName(tabId, changeInfo).catch(() => undefined);
 });
 
 chrome.tabs.onCreated.addListener((tab) => {
@@ -801,13 +802,9 @@ const handleRequest = async (
       const tab = await getActiveTab();
 
       if (tab?.id) {
-        const duplicate = await chrome.tabs.duplicate(tab.id);
-        const names = await getTabNames();
-        const original = names[String(tab.id)];
-
-        if (duplicate?.id !== undefined && original?.customName) {
-          await renameTab(duplicate.id, original.customName);
-        }
+        // Serialize lookup, duplicate, and inheritance on the tab-name queue so
+        // reconciliation cannot attach a closed strip name onto the new tab first.
+        await duplicateTabWithName(tab.id);
       }
 
       return typedBackgroundResult(action, true);
@@ -1173,8 +1170,7 @@ const listTabs = async (): Promise<
       }
 
       const active = tabs.find((tab) => tab.windowId === window.id && tab.active);
-      const saved = active?.id !== undefined ? names[String(active.id)] : undefined;
-      const activeTitle = saved?.customName || active?.title;
+      const activeTitle = active?.title;
       return [[window.id, activeTitle ? `Window · ${activeTitle}` : `Window ${index + 1}`] as const];
     }),
   );

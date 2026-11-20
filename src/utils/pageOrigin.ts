@@ -25,7 +25,10 @@ export const isScriptableHttpUrl = (url?: string): boolean => {
       return false;
     }
 
-    if (parsed.hostname === 'chrome.google.com' && parsed.pathname.startsWith('/webstore')) {
+    if (
+      parsed.hostname === 'chrome.google.com' &&
+      (parsed.pathname === '/webstore' || parsed.pathname.startsWith('/webstore/'))
+    ) {
       return false;
     }
 
