@@ -1,6 +1,6 @@
 # Tab title rename prototype
 
-This isolated Manifest V3 prototype tests changing a regular page's `document.title` and restoring its original title. It is not included in Keybar's build. Its `optional_host_permissions` are confined to this prototype; Keybar's production manifest is unchanged.
+This isolated Manifest V3 prototype tests changing a regular page's `document.title` and restoring its original title. It is not included in Keybar's build. Production Keybar now ships required HTTP(S) host permissions for the same feature (issue #40).
 
 The popup resolves the current tab when opened, requests access to only that tab's origin after the user chooses **Allow this site and apply**, and stores the original title. It overrides later SPA title changes and reapplies the custom name after same-origin reloads and navigations. **Restore page title** restores the captured title only when the tab is still on the saved origin and the page is actively displaying this prototype's override.
 
@@ -10,4 +10,4 @@ Injection is unavailable on restricted pages such as `chrome://` pages and the C
 
 The prototype also does not reconcile page state restored from Chrome's back/forward cache. For example, after applying a custom title on page A, navigating to page B, and restoring B, going Back can restore A with its custom title even though the saved override record was removed. Restore then reports that no title is saved. This is a known prototype limitation; production code needs to handle cached documents when restoring or clearing an override.
 
-Do not add optional host permissions to Keybar until Pedro approves the permission and product decision.
+Pedro approved option 2 in issue #40; production Keybar now uses required HTTP(S) host permissions for tab-strip renaming. This prototype remains a research fixture.

@@ -86,9 +86,14 @@ test('manifest requests and popup keyboard behavior', async () => {
       !manifest.content_scripts?.length,
       'the manifest does not automatically inject scripts; explicit activeTab injection is allowed',
     );
+    assert.deepEqual(
+      manifest.host_permissions ?? [],
+      ['http://*/*', 'https://*/*'],
+      'tab-strip renaming requires HTTP(S) host access like Tab Renamer',
+    );
     assert.ok(
-      !manifest.host_permissions?.length && !manifest.optional_host_permissions?.length,
-      'the extension requests no website access',
+      !manifest.optional_host_permissions?.length,
+      'website access is required at install, not requested optionally per site',
     );
     assert.ok(
       manifest.optional_permissions.includes('bookmarks'),
@@ -1481,6 +1486,46 @@ test('tab-name persistence behavior', async () => {
       'the restored name records the page title after navigation',
     );
 
+    const stripOverrideActive = {
+      55: {
+        tabId: 55,
+        customName: 'Research',
+        originalTitle: 'Project notes',
+        url: 'https://example.com/notes',
+        updatedAt: now,
+        showInTabStrip: true,
+        tabStripOrigin: 'https://example.com',
+      },
+    };
+    const stripTitlePreserved = reconcileTabNames(
+      stripOverrideActive,
+      [{ id: 55, title: 'Research', url: 'https://example.com/notes' }],
+      now,
+    );
+    assert.equal(
+      stripTitlePreserved['55']?.originalTitle,
+      'Project notes',
+      'an active tab-strip override does not replace the stored page title with the custom name',
+    );
+
+    const stripRestoredByUrl = reconcileTabNames(
+      {
+        'stale:55:1:1': {
+          ...stripOverrideActive[55],
+          closedAt: now,
+        },
+      },
+      [{ id: 56, title: 'Research', url: 'https://example.com/notes' }],
+      now,
+    );
+    assert.equal(stripRestoredByUrl['56']?.customName, 'Research', 'URL-only restore still reattaches a strip name');
+    assert.equal(
+      stripRestoredByUrl['56']?.originalTitle,
+      'Project notes',
+      'URL-only restore keeps the real page title when Chrome still reports the custom strip title',
+    );
+    assert.equal(stripRestoredByUrl['56']?.showInTabStrip, true, 'strip opt-in survives unique reattachment');
+
     const ambiguousName = reconcileTabNames(
       renamed,
       [
@@ -1494,6 +1539,158 @@ test('tab-name persistence behavior', async () => {
       ambiguousName['12']?.customName,
       'Research',
       'the original metadata is kept when reattachment is ambiguous',
+    );
+
+    const dualTitleAmbiguous = reconcileTabNames(
+      {
+        'stale:12:1:1': {
+          tabId: 12,
+          customName: 'Research',
+          originalTitle: 'Project notes',
+          url: 'https://example.com/notes',
+          updatedAt: now,
+          closedAt: now,
+          showInTabStrip: true,
+          tabStripOrigin: 'https://example.com',
+        },
+      },
+      [
+        { id: 45, title: 'Research', url: 'https://example.com/notes' },
+        { id: 46, title: 'Project notes', url: 'https://example.com/notes' },
+      ],
+      now,
+    );
+    assert.equal(
+      dualTitleAmbiguous['45'],
+      undefined,
+      'a tab reporting the custom strip title does not claim the name when another tab reports the original',
+    );
+    assert.equal(
+      dualTitleAmbiguous['46'],
+      undefined,
+      'a tab reporting the original title does not claim the name when another tab reports the custom strip title',
+    );
+    assert.equal(
+      dualTitleAmbiguous['stale:12:1:1']?.customName,
+      'Research',
+      'dual-title session restore leaves the name unattached when both tabs qualify',
+    );
+
+    const reverseDualTitleAmbiguous = reconcileTabNames(
+      {
+        'stale:12:1:1': {
+          tabId: 12,
+          customName: 'Research',
+          originalTitle: 'Project notes',
+          url: 'https://example.com/notes',
+          updatedAt: now,
+          closedAt: now,
+          showInTabStrip: true,
+          tabStripOrigin: 'https://example.com',
+        },
+        'stale:13:1:1': {
+          tabId: 13,
+          customName: 'Draft',
+          originalTitle: 'Research',
+          url: 'https://example.com/notes',
+          updatedAt: now,
+          closedAt: now,
+          showInTabStrip: true,
+          tabStripOrigin: 'https://example.com',
+        },
+      },
+      [{ id: 45, title: 'Research', url: 'https://example.com/notes' }],
+      now,
+    );
+    assert.equal(
+      reverseDualTitleAmbiguous['45'],
+      undefined,
+      'a tab that matches one record’s custom title and another’s original title stays unattached',
+    );
+    assert.equal(
+      reverseDualTitleAmbiguous['stale:12:1:1']?.customName,
+      'Research',
+      'the custom-title record remains when a tab also matches another record’s original title',
+    );
+    assert.equal(
+      reverseDualTitleAmbiguous['stale:13:1:1']?.customName,
+      'Draft',
+      'the original-title record remains when a tab also matches another record’s custom title',
+    );
+
+    const distinctCustomSameOriginal = reconcileTabNames(
+      {
+        'stale:12:1:1': {
+          tabId: 12,
+          customName: 'Alpha',
+          originalTitle: 'Project notes',
+          url: 'https://example.com/notes',
+          updatedAt: now,
+          closedAt: now,
+          showInTabStrip: true,
+          tabStripOrigin: 'https://example.com',
+        },
+        'stale:13:1:1': {
+          tabId: 13,
+          customName: 'Beta',
+          originalTitle: 'Project notes',
+          url: 'https://example.com/notes',
+          updatedAt: now,
+          closedAt: now,
+          showInTabStrip: true,
+          tabStripOrigin: 'https://example.com',
+        },
+      },
+      [
+        { id: 45, title: 'Alpha', url: 'https://example.com/notes' },
+        { id: 46, title: 'Beta', url: 'https://example.com/notes' },
+      ],
+      now,
+    );
+    assert.equal(
+      distinctCustomSameOriginal['45']?.customName,
+      'Alpha',
+      'distinct custom titles reattach when they uniquely identify restored tabs that share an original title',
+    );
+    assert.equal(
+      distinctCustomSameOriginal['46']?.customName,
+      'Beta',
+      'the second distinct custom title reattaches to its matching restored tab',
+    );
+
+    const customTitleOffStripOrigin = reconcileTabNames(
+      {
+        'stale:12:1:1': {
+          tabId: 12,
+          customName: 'Research',
+          originalTitle: 'Project notes',
+          url: 'https://other.example/notes',
+          updatedAt: now,
+          closedAt: now,
+          showInTabStrip: true,
+          tabStripOrigin: 'https://example.com',
+        },
+      },
+      [
+        { id: 45, title: 'Research', url: 'https://other.example/notes' },
+        { id: 46, title: 'Unrelated', url: 'https://other.example/notes' },
+      ],
+      now,
+    );
+    assert.equal(
+      customTitleOffStripOrigin['45'],
+      undefined,
+      'a custom title on a different origin than tabStripOrigin is not an exact-match candidate',
+    );
+    assert.equal(
+      customTitleOffStripOrigin['46'],
+      undefined,
+      'URL-only remains ambiguous when an off-origin custom title coincides with one tab',
+    );
+    assert.equal(
+      customTitleOffStripOrigin['stale:12:1:1']?.customName,
+      'Research',
+      'off-origin custom-title coincidence leaves the name unattached',
     );
 
     const ambiguousUrl = reconcileTabNames(
@@ -2069,6 +2266,12 @@ test('background message and command contracts', async () => {
     assert.equal(renameResponse.success, true, 'the background accepts a tab rename');
     assert.equal(localStore.renamedTabs['7'].customName, 'Research', 'custom names are stored as extension metadata');
 
+    chrome.tabs.get = async (id) =>
+      id === 7
+        ? { id: 7, title: 'Updated title', url: 'https://example.test/new', windowId: 1, index: 0 }
+        : id === activeBackgroundTab.id
+          ? activeBackgroundTab
+          : { id, url: 'https://example.test/old', title: 'Old title', windowId: 1, index: 0 };
     updatedListener(
       7,
       { title: 'Updated title', url: 'https://example.test/new' },

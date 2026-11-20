@@ -954,10 +954,42 @@ export const useCommandPaletteModel = ({
       }
 
       if (dialog.kind === 'rename') {
-        await sendBackground('tabs:rename', { tabId: dialog.tabId, name: renameValue });
+        const result = await sendBackground('tabs:rename', {
+          tabId: dialog.tabId,
+          name: renameValue,
+        });
         await refreshTabs();
+
+        if (!renameValue.trim()) {
+          if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
+            setDialogError(
+              result.stripReason === 'site-access-required'
+                ? 'Could not remove the custom title from Chrome’s tab strip. Approve access, then try again.'
+                : 'Could not remove the custom title from Chrome’s tab strip. Try again.',
+            );
+            return;
+          }
+
+          await closeDialog();
+          notify('Custom tab name removed.', 'success');
+          return;
+        }
+
         await closeDialog();
-        notify(renameValue.trim() ? 'Tab name saved.' : 'Custom tab name removed.', 'success');
+
+        if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
+          notify(
+            result.record?.showInTabStrip
+              ? 'Chrome’s tab strip could not be updated. The previous custom title is still active.'
+              : result.stripReason === 'unsupported-page'
+                ? 'Tab name saved in Keybar. This page cannot show a custom title in Chrome’s tab strip.'
+                : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
+            result.record?.showInTabStrip ? 'error' : 'success',
+          );
+          return;
+        }
+
+        notify('Tab name saved.', 'success');
         return;
       }
 

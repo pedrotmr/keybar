@@ -106,6 +106,10 @@ export interface RenamedTab {
   updatedAt: number;
   closedAt?: number;
   excludedTabIdsAtClose?: number[];
+  /** True after a successful strip title apply; Keybar reapplies document.title on this origin. */
+  showInTabStrip?: boolean;
+  /** Origin where the strip title was applied; reinjection runs only while the tab is on this origin. */
+  tabStripOrigin?: string;
 }
 
 export type AppearanceMode = 'system' | 'light' | 'dark';

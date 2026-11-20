@@ -79,12 +79,19 @@ for (const file of contentBundles) {
     throw new Error(`${file} contains an unbundled NODE_ENV reference.`);
   }
 }
+const allowedHosts = new Set(['http://*/*', 'https://*/*']);
+const hostPermissions = manifest.host_permissions ?? [];
+const optionalHostPermissions = manifest.optional_host_permissions ?? [];
 if (
   manifest.content_scripts?.length ||
-  manifest.host_permissions?.length ||
-  manifest.optional_host_permissions?.length
+  hostPermissions.some((pattern) => !allowedHosts.has(pattern)) ||
+  optionalHostPermissions.some((pattern) => !allowedHosts.has(pattern)) ||
+  !hostPermissions.includes('http://*/*') ||
+  !hostPermissions.includes('https://*/*')
 ) {
-  throw new Error('The extension build unexpectedly includes page injection or host permissions.');
+  throw new Error(
+    'The extension build must declare http(s) host permissions for tab-strip renaming and must not include content scripts or unexpected hosts.',
+  );
 }
 
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);

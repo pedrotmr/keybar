@@ -1,4 +1,5 @@
 import type { RenamedTab } from '@/types';
+import { getHttpOrigin } from '@/utils/pageOrigin';
 
 export type TabNameMap = Record<string, RenamedTab>;
 export type TabIdentitySnapshot = Pick<chrome.tabs.Tab, 'id' | 'url' | 'title'>;
@@ -15,6 +16,10 @@ export const normalizeTabNames = (value: unknown): TabNameMap => {
       }
 
       const name = entry as Partial<RenamedTab>;
+      const validStrip =
+        (name.showInTabStrip === undefined || typeof name.showInTabStrip === 'boolean') &&
+        (name.tabStripOrigin === undefined || typeof name.tabStripOrigin === 'string');
+
       return (
         typeof name.tabId === 'number' &&
         Number.isSafeInteger(name.tabId) &&
@@ -24,6 +29,7 @@ export const normalizeTabNames = (value: unknown): TabNameMap => {
         typeof name.originalTitle === 'string' &&
         typeof name.updatedAt === 'number' &&
         Number.isFinite(name.updatedAt) &&
+        validStrip &&
         (name.closedAt === undefined || (typeof name.closedAt === 'number' && Number.isFinite(name.closedAt))) &&
         (name.excludedTabIdsAtClose === undefined ||
           (Array.isArray(name.excludedTabIdsAtClose) &&
@@ -31,6 +37,26 @@ export const normalizeTabNames = (value: unknown): TabNameMap => {
       );
     }),
   );
+};
+
+const normalizeComparableTitle = (value: string): string => value.replace(/[\t\n\f\r ]+/g, ' ').trim();
+
+const pageTitleForStorage = (tabTitle: string | undefined, tabUrl: string | undefined, name: RenamedTab): string => {
+  if (typeof tabTitle !== 'string') {
+    return name.originalTitle;
+  }
+
+  // When Keybar owns document.title on the strip origin, Chrome reports the custom name as tab.title.
+  if (
+    name.showInTabStrip &&
+    name.tabStripOrigin &&
+    getHttpOrigin(tabUrl) === name.tabStripOrigin &&
+    normalizeComparableTitle(tabTitle) === normalizeComparableTitle(name.customName)
+  ) {
+    return name.originalTitle;
+  }
+
+  return tabTitle;
 };
 
 const DEFAULT_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
@@ -125,69 +151,83 @@ export const reconcileTabNames = (
       }
 
       name.url = tab.url ?? name.url;
-      name.originalTitle = tab.title ?? name.originalTitle;
+      name.originalTitle = pageTitleForStorage(tab.title, tab.url, name);
       name.closedAt = undefined;
       delete name.excludedTabIdsAtClose;
     }
   }
 
-  const oldByIdentity = new Map<string, string[]>();
-
-  for (const [id, name] of Object.entries(names)) {
-    if (activeIds.has(id)) {
-      continue;
+  // Chrome may restore either the real page title or the custom strip title. Match
+  // both representations, require a unique pair in both directions, then mutate.
+  const reattachable = Object.entries(names).flatMap(([id, name]) => {
+    if (activeIds.has(id) || !name.url) {
+      return [];
     }
 
     if (!forceIdentityMatching && !isStaleTabNameKey(id) && name.closedAt === undefined) {
-      continue;
+      return [];
     }
 
-    const key = identity(name.url, name.originalTitle);
+    return [{ id, name }];
+  });
 
-    if (!key) {
-      continue;
+  const unnamedTabs = currentTabs.filter((tab) => tab.id !== undefined && !names[String(tab.id)]);
+
+  const nameMatchesTab = (name: RenamedTab, tab: TabIdentitySnapshot): boolean => {
+    if (!tab.url || tab.url !== name.url) {
+      return false;
     }
 
-    const matches = oldByIdentity.get(key) ?? [];
-    matches.push(id);
-    oldByIdentity.set(key, matches);
-  }
+    const tabTitle = normalizeComparableTitle(tab.title ?? '');
 
-  const currentByIdentity = new Map<string, TabIdentitySnapshot[]>();
-
-  for (const tab of currentTabs) {
-    if (tab.id === undefined || names[String(tab.id)]) {
-      continue;
+    if (tabTitle === normalizeComparableTitle(name.originalTitle)) {
+      return true;
     }
 
-    const key = identity(tab.url, tab.title);
-
-    if (!key) {
-      continue;
-    }
-
-    const matches = currentByIdentity.get(key) ?? [];
-    matches.push(tab);
-    currentByIdentity.set(key, matches);
-  }
-
-  for (const [key, oldIds] of oldByIdentity) {
-    if (oldIds.length !== 1) {
-      continue;
-    }
-
-    const oldId = oldIds[0];
-    const excludedIds = new Set(names[oldId].excludedTabIdsAtClose ?? []);
-    const matchingTabs = (currentByIdentity.get(key) ?? []).filter(
-      (tab) => tab.id !== undefined && !excludedIds.has(tab.id),
+    // Custom strip titles only count on the origin where Keybar applied them.
+    return Boolean(
+      name.showInTabStrip &&
+      name.tabStripOrigin &&
+      getHttpOrigin(tab.url) === name.tabStripOrigin &&
+      tabTitle === normalizeComparableTitle(name.customName),
     );
+  };
 
-    if (matchingTabs.length !== 1 || matchingTabs[0].id === undefined) {
+  const nameToTabIds = new Map<string, number[]>();
+  const tabToNameIds = new Map<number, string[]>();
+
+  for (const { id, name } of reattachable) {
+    const excludedIds = new Set(name.excludedTabIdsAtClose ?? []);
+
+    for (const tab of unnamedTabs) {
+      if (tab.id === undefined || excludedIds.has(tab.id) || !nameMatchesTab(name, tab)) {
+        continue;
+      }
+
+      const tabs = nameToTabIds.get(id) ?? [];
+      tabs.push(tab.id);
+      nameToTabIds.set(id, tabs);
+
+      const nameIds = tabToNameIds.get(tab.id) ?? [];
+      nameIds.push(id);
+      tabToNameIds.set(tab.id, nameIds);
+    }
+  }
+
+  for (const [oldId, tabIds] of nameToTabIds) {
+    if (tabIds.length !== 1) {
       continue;
     }
 
-    const newId = String(matchingTabs[0].id);
-    names[newId] = { ...withoutCloseExclusions(names[oldId]), tabId: matchingTabs[0].id, closedAt: undefined };
+    const tabId = tabIds[0];
+    const matchingNameIds = tabToNameIds.get(tabId) ?? [];
+
+    if (matchingNameIds.length !== 1 || matchingNameIds[0] !== oldId) {
+      continue;
+    }
+
+    const previous = names[oldId];
+    names[String(tabId)] = { ...withoutCloseExclusions(previous), tabId, closedAt: undefined };
     delete names[oldId];
   }
 
@@ -237,10 +277,11 @@ export const reconcileTabNames = (
     }
 
     const newId = String(matchingTabs[0].id);
+    const previous = names[oldId];
     names[newId] = {
-      ...withoutCloseExclusions(names[oldId]),
+      ...withoutCloseExclusions(previous),
       tabId: matchingTabs[0].id,
-      originalTitle: matchingTabs[0].title ?? names[oldId].originalTitle,
+      originalTitle: pageTitleForStorage(matchingTabs[0].title, matchingTabs[0].url, previous),
       closedAt: undefined,
     };
     delete names[oldId];
