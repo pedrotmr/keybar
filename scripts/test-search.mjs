@@ -86,9 +86,14 @@ test('manifest requests and popup keyboard behavior', async () => {
       !manifest.content_scripts?.length,
       'the manifest does not automatically inject scripts; explicit activeTab injection is allowed',
     );
+    assert.deepEqual(
+      manifest.host_permissions ?? [],
+      ['http://*/*', 'https://*/*'],
+      'tab-strip renaming requires HTTP(S) host access like Tab Renamer',
+    );
     assert.ok(
-      !manifest.host_permissions?.length && !manifest.optional_host_permissions?.length,
-      'the extension requests no website access',
+      !manifest.optional_host_permissions?.length,
+      'website access is required at install, not requested optionally per site',
     );
     assert.ok(
       manifest.optional_permissions.includes('bookmarks'),
@@ -1409,6 +1414,46 @@ test('tab-name persistence behavior', async () => {
       'Project notes · updated',
       'the restored name records the page title after navigation',
     );
+
+    const stripOverrideActive = {
+      55: {
+        tabId: 55,
+        customName: 'Research',
+        originalTitle: 'Project notes',
+        url: 'https://example.com/notes',
+        updatedAt: now,
+        showInTabStrip: true,
+        tabStripOrigin: 'https://example.com',
+      },
+    };
+    const stripTitlePreserved = reconcileTabNames(
+      stripOverrideActive,
+      [{ id: 55, title: 'Research', url: 'https://example.com/notes' }],
+      now,
+    );
+    assert.equal(
+      stripTitlePreserved['55']?.originalTitle,
+      'Project notes',
+      'an active tab-strip override does not replace the stored page title with the custom name',
+    );
+
+    const stripRestoredByUrl = reconcileTabNames(
+      {
+        'stale:55:1:1': {
+          ...stripOverrideActive[55],
+          closedAt: now,
+        },
+      },
+      [{ id: 56, title: 'Research', url: 'https://example.com/notes' }],
+      now,
+    );
+    assert.equal(stripRestoredByUrl['56']?.customName, 'Research', 'URL-only restore still reattaches a strip name');
+    assert.equal(
+      stripRestoredByUrl['56']?.originalTitle,
+      'Project notes',
+      'URL-only restore keeps the real page title when Chrome still reports the custom strip title',
+    );
+    assert.equal(stripRestoredByUrl['56']?.showInTabStrip, true, 'strip opt-in survives unique reattachment');
 
     const ambiguousName = reconcileTabNames(
       renamed,

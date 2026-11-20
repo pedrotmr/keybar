@@ -68,7 +68,9 @@ export function DialogFields({
             maxLength={120}
             placeholder="e.g. Sprint planning"
           />
-          <span className="field-help">Leave it empty to restore the page title.</span>
+          <span className="field-help">
+            Shown in Keybar and in Chrome’s tab strip on regular pages. Leave empty to clear.
+          </span>
         </div>
       )}
 

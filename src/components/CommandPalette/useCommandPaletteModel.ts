@@ -954,10 +954,29 @@ export const useCommandPaletteModel = ({
       }
 
       if (dialog.kind === 'rename') {
-        await sendBackground('tabs:rename', { tabId: dialog.tabId, name: renameValue });
+        const result = await sendBackground('tabs:rename', {
+          tabId: dialog.tabId,
+          name: renameValue,
+        });
         await refreshTabs();
         await closeDialog();
-        notify(renameValue.trim() ? 'Tab name saved.' : 'Custom tab name removed.', 'success');
+
+        if (!renameValue.trim()) {
+          notify('Custom tab name removed.', 'success');
+          return;
+        }
+
+        if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
+          notify(
+            result.stripReason === 'unsupported-page'
+              ? 'Tab name saved in Keybar. This page cannot show a custom title in Chrome’s tab strip.'
+              : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
+            'success',
+          );
+          return;
+        }
+
+        notify('Tab name saved.', 'success');
         return;
       }
 

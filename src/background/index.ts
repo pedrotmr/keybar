@@ -16,7 +16,7 @@ import {
 } from '@/utils/tabSwitcherKeyRelease';
 import artifacts from '../../extension-artifacts.json';
 import {
-  getTabCustomName,
+  getBfcacheTitleDecision,
   getTabNames,
   handleClosedTabName,
   handleCreatedTabName,
@@ -720,6 +720,16 @@ const handleRequest = async (
 
     case 'tabs:rename':
       return typedBackgroundResult(action, renameTab(message.tabId, message.name));
+
+    case 'tabs:title-bfcache-check': {
+      const tabId = asPositiveInteger(sender.tab?.id);
+
+      if (tabId === undefined) {
+        return typedBackgroundResult(action, { restore: true });
+      }
+
+      return typedBackgroundResult(action, getBfcacheTitleDecision(tabId));
+    }
     case 'tabs:close':
       await chrome.tabs.remove(message.tabId);
       return typedBackgroundResult(action, true);
@@ -792,10 +802,11 @@ const handleRequest = async (
 
       if (tab?.id) {
         const duplicate = await chrome.tabs.duplicate(tab.id);
-        const originalName = await getTabCustomName(tab.id);
+        const names = await getTabNames();
+        const original = names[String(tab.id)];
 
-        if (duplicate?.id !== undefined && originalName) {
-          await renameTab(duplicate.id, originalName);
+        if (duplicate?.id !== undefined && original?.customName) {
+          await renameTab(duplicate.id, original.customName);
         }
       }
 
@@ -1139,7 +1150,15 @@ const setActiveTabZoom = async (action: string): Promise<boolean> => {
   return true;
 };
 
-const listTabs = async (): Promise<Array<SplitAwareTab & { customName?: string; windowTitle?: string }>> => {
+const listTabs = async (): Promise<
+  Array<
+    SplitAwareTab & {
+      customName?: string;
+      originalTitle?: string;
+      windowTitle?: string;
+    }
+  >
+> => {
   const [tabs, windows, names, focusedWindow] = await Promise.all([
     chrome.tabs.query({}),
     chrome.windows.getAll({ windowTypes: ['normal'] }),
@@ -1153,7 +1172,9 @@ const listTabs = async (): Promise<Array<SplitAwareTab & { customName?: string; 
         return [];
       }
 
-      const activeTitle = tabs.find((tab) => tab.windowId === window.id && tab.active)?.title;
+      const active = tabs.find((tab) => tab.windowId === window.id && tab.active);
+      const saved = active?.id !== undefined ? names[String(active.id)] : undefined;
+      const activeTitle = saved?.customName || active?.title;
       return [[window.id, activeTitle ? `Window · ${activeTitle}` : `Window ${index + 1}`] as const];
     }),
   );
@@ -1165,11 +1186,15 @@ const listTabs = async (): Promise<Array<SplitAwareTab & { customName?: string; 
         tab.windowId !== chrome.windows.WINDOW_ID_NONE &&
         !tab.url?.startsWith(ownExtensionUrlPrefix),
     )
-    .map((tab) => ({
-      ...(tab as SplitAwareTab),
-      customName: names[String(tab.id)]?.customName,
-      windowTitle: windowTitles.get(tab.windowId) ?? 'Window',
-    }))
+    .map((tab) => {
+      const saved = names[String(tab.id)];
+      return {
+        ...(tab as SplitAwareTab),
+        customName: saved?.customName,
+        originalTitle: saved?.originalTitle,
+        windowTitle: windowTitles.get(tab.windowId) ?? 'Window',
+      };
+    })
     .sort(
       (a, b) =>
         Number(b.active && b.windowId === focusedWindow.id) - Number(a.active && a.windowId === focusedWindow.id) ||

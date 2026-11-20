@@ -30,9 +30,9 @@ Appearance settings include **Compact** and **Expanded** window modes. Compact o
 
 The Tab Switcher is a centered, horizontal strip of the five most recently accessed tabs in the current window. It shows favicons and titles, cycles with the keyboard, and supports the modifier-release behavior when opened from its shortcut. Search all tabs, rename one, or run additional tab actions from the Command Bar.
 
-Chrome only exposes a screenshot of the currently visible tab. When you explicitly open the Command Bar or Tab Switcher on a regular web page, the extension starts a non-blocking capture using the temporary `activeTab` grant. Other cards use a favicon-and-host fallback until a preview is available. The cache is limited to five tabs, cleared when Chrome reports a changed URL or a tab closes, and never uploaded. A same-URL reload does not itself trigger the URL-change cleanup. No broad website permission is requested.
+Chrome only exposes a screenshot of the currently visible tab. When you explicitly open the Command Bar or Tab Switcher on a regular web page, the extension starts a non-blocking capture using the temporary `activeTab` grant. Other cards use a favicon-and-host fallback until a preview is available. The cache is limited to five tabs, cleared when Chrome reports a changed URL or a tab closes, and never uploaded. A same-URL reload does not itself trigger the URL-change cleanup.
 
-Custom tab names and their associated URLs and original page titles are extension metadata in `chrome.storage.local`; the extension never changes a website's `document.title` or favicon. Keybar refreshes the saved URL/title when a tab navigates and uses them to reattach a name after session restore only when the match is unique. Ambiguous matches stay unattached. A duplicate tab inherits its name. Closed-tab names expire after 90 days. Names remain local and are not synced.
+Custom tab names and their associated URLs and original page titles are stored in `chrome.storage.local`. On regular web pages, renaming a tab also sets the page’s `document.title` so Chrome’s tab strip shows the name (same approach as Tab Renamer). That needs HTTP(S) host access declared in the manifest; the page’s own scripts can read the custom title. Keybar keeps the original title for clear/reset and session reattachment, and does not change favicons. Names reattach after session restore only on a unique URL/title match; ambiguous matches stay unattached. A duplicate tab inherits its name. Closed-tab names expire after 90 days. Names remain local and are not synced.
 
 ## Themes and design
 
@@ -46,9 +46,9 @@ The Command Bar and Tab Switcher use the same tokens and typography, with separa
 
 ## Privacy and permissions
 
-- Required permissions are `activeTab`, `scripting`, `tabs`, and `storage`. There are no host permissions, analytics, or background network requests.
+- Required permissions are `activeTab`, `scripting`, `tabs`, `storage`, and HTTP(S) host access so renamed titles can appear in Chrome’s tab strip. There are no analytics or background network requests.
 - Choosing a provider sends the query in that provider's URL and opens its website. Favicon images use the URLs already reported by Chrome.
-- Optional `bookmarks` and `history` access enables saved-page search. Choosing that feature requests any missing bookmarks and history permissions together; sources already permitted are read locally when the Command Bar opens. `tabGroups` enables group commands; `sessions` restores a closed tab; `clipboardWrite` enables copy commands. Each is requested only when a user chooses the feature.
+- Optional `bookmarks` and `history` access enables saved-page search. Choosing that feature requests any missing bookmarks and history permissions together; sources already permitted are read locally when the Command Bar opens. `tabGroups` enables group commands; `sessions` restores a closed tab; `clipboardWrite` enables copy commands. Each optional permission is requested only when a user chooses the feature.
 - A tab preview is captured only after the user explicitly opens the Command Bar or Tab Switcher on a regular web page and Chrome grants temporary access to the visible tab. It stays in session storage, is cleared when Chrome reports a changed URL or the tab closes, and is never transmitted. A same-URL reload does not itself trigger the URL-change cleanup.
 
 ## Development

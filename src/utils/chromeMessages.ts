@@ -4,6 +4,7 @@ import type { BulkCloseAction } from './bulkClose';
 type ManagedBrowserTab = chrome.tabs.Tab & {
   splitViewId?: number;
   customName?: string;
+  originalTitle?: string;
   previewDataUrl?: string;
   windowTitle?: string;
   groupTitle?: string;
@@ -74,7 +75,15 @@ interface TabSwitcherMessages {
 }
 
 interface TabOrganizationMessages {
-  'tabs:rename': { request: { tabId: number; name: string }; response: RenamedTab | null };
+  'tabs:rename': {
+    request: { tabId: number; name: string };
+    response: {
+      record: RenamedTab | null;
+      stripStatus?: 'applied' | 'restored' | 'unavailable' | 'denied' | 'unchanged';
+      stripReason?: string;
+    };
+  };
+  'tabs:title-bfcache-check': { request: EmptyPayload; response: { customName?: string; restore?: boolean } };
   'tabs:move-active-new-window': { request: EmptyPayload; response: boolean };
   'tabs:move-new-window': { request: { tabId: number }; response: boolean };
   'tabs:move': { request: { tabId: number; windowId: number }; response: boolean };
@@ -215,6 +224,7 @@ export const BACKGROUND_ACTIONS = [
   'tabs:recent-previews',
   'tabs:close-confirmed',
   'tabs:rename',
+  'tabs:title-bfcache-check',
   'tabs:move-new-window',
   'tabs:move',
   'tabs:group',

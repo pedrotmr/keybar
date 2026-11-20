@@ -1,5 +1,7 @@
 # Making custom names appear in Chrome's tab strip
 
+> **Superseded for shipping:** issue [#40](https://github.com/pedrotmr/keybar/issues/40) shipped required HTTP(S) `host_permissions` (Tab Renamer model), not the optional/activeTab-only path below. Keep this note as investigation history.
+
 ## Recommendation
 
 The page title can be replaced by injecting code into the page and setting `document.title`. Keybar's existing `activeTab` and `scripting` permissions support an on-demand override after the user invokes Keybar on a regular page. Chrome retains the temporary grant through same-origin navigation, including reload, so Keybar can reinject after those loads without optional host access while the grant remains active.
@@ -33,6 +35,6 @@ The prototype also shows the permission boundary: its popup requests the current
 
 ## Implementation decision
 
-If approved, implement this behind an explicit per-site **Show custom name in Chrome's tab strip** action. Request only the current page's origin with optional host permissions. Persist the original page title separately from the custom name. Ensure title-change events caused by Keybar do not overwrite the original title in `src/background/index.ts`. Reattach after session restore only when Keybar's existing unique-match rule succeeds. Restore the original page title when the user disables the feature or clears the custom name.
+Implemented without a separate checkbox: renaming a tab on a regular page sets `document.title` (Tab Renamer-style), using required HTTP(S) host permissions like Tab Renamer. Persist the original page title separately from the custom name. Ensure title-change events caused by Keybar do not overwrite the original title. Reattach after session restore only when Keybar's existing unique-match rule succeeds. Restore the original page title when the user clears the custom name.
 
-Decision needed from Pedro: approve the per-site optional access prompt and the tab-strip behavior, or keep custom names exclusive to Keybar's UI. No change to the shipped permission footprint was made as part of this investigation.
+Decision (issue [#40](https://github.com/pedrotmr/keybar/issues/40)): Pedro chose option 2 — persistent tab-strip override with required HTTP(S) host access (Tab Renamer-style), accepting that page scripts can read the custom title.

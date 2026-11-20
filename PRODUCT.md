@@ -19,9 +19,9 @@ Quiet, precise, capable. Offer Open Sans, Outfit, Nunito Sans, Sora, and IBM Ple
 - Keep activation, local search, and keyboard response fast; network handoffs never block local results.
 - Treat accessibility as part of each interaction: semantic controls, visible focus, predictable navigation, screen-reader announcements, reduced motion, and WCAG 2.2 AA contrast.
 - Keep the Command Bar and Tab Switcher visually related while giving each a layout suited to its task.
-- Store custom tab names as extension metadata; never replace a website's document title.
-- Request optional permissions only when a user chooses the feature that needs them.
-- Render page overlays in extension-owned styles and leave host-page appearance and behavior alone.
+- Store custom tab names as extension metadata. On regular pages, renaming also sets the page's document title so Chrome's tab strip shows the name (requires HTTP(S) host access, same model as Tab Renamer).
+- Request optional API permissions (bookmarks, history, tab groups, sessions, clipboard) only when a user chooses the feature that needs them. HTTP(S) host access for tab-strip renaming is required at install.
+- Render page overlays in extension-owned styles and leave host-page appearance and behavior alone aside from an explicit rename of document.title.
 - Keep the command catalog focused; API availability alone is not a reason to add a feature.
 
 ## Anti-references
@@ -29,7 +29,7 @@ Quiet, precise, capable. Offer Open Sans, Outfit, Nunito Sans, Sora, and IBM Ple
 - A wholesale clone of another product.
 - Heavy blur, decorative animation, or large visual effects that cost responsiveness.
 - Fragile scraping or unsupported private APIs for external providers.
-- Broad permissions, analytics, or background network activity without a clear user benefit.
+- Permissions, analytics, or background network activity without a clear user benefit.
 
 ## Accessibility and release quality
 

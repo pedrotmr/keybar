@@ -3,6 +3,8 @@ import { TAB_GROUP_ID_NONE } from '@/utils/chromeApiConstants';
 
 export interface ManagedTab extends SplitAwareTab {
   customName?: string;
+  /** Page title stored by Keybar; preferred over Chrome's tab.title when a strip override is active. */
+  originalTitle?: string;
   previewDataUrl?: string;
   windowTitle?: string;
   groupTitle?: string;
@@ -54,7 +56,7 @@ export const toTabItems = (
       return [];
     }
 
-    const originalTitle = tab.title || tab.url || 'Untitled tab';
+    const originalTitle = tab.originalTitle || tab.title || tab.url || 'Untitled tab';
     const title = tab.customName || originalTitle;
     const details = [tab.customName ? originalTitle : '', tab.url || ''].filter(Boolean).join(' · ');
     const groupTitle =

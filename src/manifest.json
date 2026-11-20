@@ -9,6 +9,7 @@
   },
   "minimum_chrome_version": "127",
   "permissions": ["activeTab", "scripting", "tabs", "storage"],
+  "host_permissions": ["http://*/*", "https://*/*"],
   "optional_permissions": ["bookmarks", "history", "tabGroups", "sessions", "clipboardWrite"],
   "background": {
     "service_worker": "background.js",

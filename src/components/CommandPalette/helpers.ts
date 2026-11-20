@@ -261,7 +261,7 @@ export const getDialogDescription = (dialog: FlowDialog): string => {
   }
 
   if (dialog.kind === 'rename') {
-    return 'This name is stored by the extension. The website title stays unchanged.';
+    return 'Shown in Keybar and in Chrome’s tab strip on regular web pages.';
   }
 
   if (dialog.kind === 'move') {

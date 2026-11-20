@@ -46,9 +46,9 @@ The separate Tab Switcher shows the five most recently accessed tabs in the curr
 
 Choose **Search bookmarks and history** to request any missing optional permissions for both sources together. If either permission was granted earlier, Keybar loads that source locally when the Command Bar opens. History search returns up to 500 history entries from the last 30 days.
 
-Set a light, dark, or system theme, choose a palette and font, and adjust the Command Bar width or window mode. Custom tab names are extension metadata stored locally; they do not change a website's title or favicon.
+Set a light, dark, or system theme, choose a palette and font, and adjust the Command Bar width or window mode. Custom tab names are stored locally. Renaming a tab on a regular page also updates Chrome’s tab strip by setting the page title (which the page can read) and does not change favicons.
 
-Keybar has no host permissions, analytics, or background network requests. A tab preview is captured only after you explicitly open the Command Bar or Tab Switcher on a regular web page, stays in session storage, and is never uploaded. The cache is cleared when Chrome reports a changed URL or the tab closes; a same-URL reload does not itself trigger that cleanup.
+Keybar requests HTTP(S) host access so renamed titles can appear in the tab strip. It has no analytics or background network requests. A tab preview is captured only after you explicitly open the Command Bar or Tab Switcher on a regular web page, stays in session storage, and is never uploaded. The cache is cleared when Chrome reports a changed URL or the tab closes; a same-URL reload does not itself trigger that cleanup.
 
 Google Chrome is a trademark of Google LLC. Use of this trademark is subject to Google Permissions.
 
@@ -72,14 +72,15 @@ Chrome asks for a narrow single-purpose statement, a justification for every man
 
 ### Permission justifications
 
-The manifest declares four required and five optional permissions. Keep the justifications below aligned with the permission name shown by the dashboard.
+The manifest declares four required API permissions, HTTP(S) host access, and five optional permissions. Keep the justifications below aligned with the permission name shown by the dashboard.
 
 | Permission                  | Suggested justification                                                                                                                                                                                                                      |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `activeTab`                 | Temporarily access the current regular web page after the user opens Keybar, so it can mount the overlay and capture a preview of the visible tab. Access is limited to the user-invoked tab.                                                |
-| `scripting`                 | Inject the extension's locally packaged overlay scripts into the current tab after the user opens Keybar or the Tab Switcher.                                                                                                                |
+| `scripting`                 | Inject the extension's locally packaged overlay scripts into the current tab after the user opens Keybar or the Tab Switcher, and set or restore `document.title` when the user renames a tab.                                               |
 | `tabs`                      | Read tab IDs, titles, URLs, favicons, and window state so users can search and switch tabs and run tab actions such as rename, pin, mute, move, group, duplicate, or close.                                                                  |
 | `storage`                   | Save appearance preferences and custom tab names in local storage, and keep temporary overlay state and tab-preview data in session storage.                                                                                                 |
+| Host access                 | Read and change page titles on HTTP(S) sites so a custom tab name can appear in Chrome’s tab strip and be reapplied after reload or session restore.                                                                                         |
 | `bookmarks` (optional)      | Read and search bookmarks locally. If missing, request this permission together with `history` when the user chooses saved-page search; if already granted, bookmark data is loaded when the Command Bar opens.                              |
 | `history` (optional)        | Search up to 500 Chrome history entries from the last 30 days. If missing, request this permission together with `bookmarks` when the user chooses saved-page search; if already granted, history data is loaded when the Command Bar opens. |
 | `tabGroups` (optional)      | When the user chooses a tab-group command, read and create or update Chrome tab groups for the selected tabs. Request this permission only for group features.                                                                               |

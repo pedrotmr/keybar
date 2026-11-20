@@ -15,6 +15,10 @@ export const normalizeTabNames = (value: unknown): TabNameMap => {
       }
 
       const name = entry as Partial<RenamedTab>;
+      const validStrip =
+        (name.showInTabStrip === undefined || typeof name.showInTabStrip === 'boolean') &&
+        (name.tabStripOrigin === undefined || typeof name.tabStripOrigin === 'string');
+
       return (
         typeof name.tabId === 'number' &&
         Number.isSafeInteger(name.tabId) &&
@@ -24,6 +28,7 @@ export const normalizeTabNames = (value: unknown): TabNameMap => {
         typeof name.originalTitle === 'string' &&
         typeof name.updatedAt === 'number' &&
         Number.isFinite(name.updatedAt) &&
+        validStrip &&
         (name.closedAt === undefined || (typeof name.closedAt === 'number' && Number.isFinite(name.closedAt))) &&
         (name.excludedTabIdsAtClose === undefined ||
           (Array.isArray(name.excludedTabIdsAtClose) &&
@@ -31,6 +36,19 @@ export const normalizeTabNames = (value: unknown): TabNameMap => {
       );
     }),
   );
+};
+
+const pageTitleForStorage = (tabTitle: string | undefined, name: RenamedTab): string => {
+  if (typeof tabTitle !== 'string') {
+    return name.originalTitle;
+  }
+
+  // When Keybar owns document.title, Chrome reports the custom name as tab.title.
+  if (name.showInTabStrip && tabTitle === name.customName) {
+    return name.originalTitle;
+  }
+
+  return tabTitle;
 };
 
 const DEFAULT_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
@@ -125,7 +143,7 @@ export const reconcileTabNames = (
       }
 
       name.url = tab.url ?? name.url;
-      name.originalTitle = tab.title ?? name.originalTitle;
+      name.originalTitle = pageTitleForStorage(tab.title, name);
       name.closedAt = undefined;
       delete name.excludedTabIdsAtClose;
     }
@@ -237,10 +255,11 @@ export const reconcileTabNames = (
     }
 
     const newId = String(matchingTabs[0].id);
+    const previous = names[oldId];
     names[newId] = {
-      ...withoutCloseExclusions(names[oldId]),
+      ...withoutCloseExclusions(previous),
       tabId: matchingTabs[0].id,
-      originalTitle: matchingTabs[0].title ?? names[oldId].originalTitle,
+      originalTitle: pageTitleForStorage(matchingTabs[0].title, previous),
       closedAt: undefined,
     };
     delete names[oldId];
