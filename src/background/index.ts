@@ -91,6 +91,15 @@ const typedBackgroundResult = <Action extends BackgroundAction>(
   result: NoInfer<BackgroundResult<Action>> | PromiseLike<NoInfer<BackgroundResult<Action>>>,
 ): Promise<BackgroundResult<Action>> => Promise.resolve(result);
 
+const readPaletteTabsSnapshot = async (): Promise<PaletteTabsSnapshot | undefined> => {
+  const storedSnapshot: Record<string, unknown> = await chrome.storage.session
+    .get(PALETTE_TABS_SNAPSHOT_KEY)
+    .catch(() => ({}));
+  return isPaletteTabsSnapshot(storedSnapshot[PALETTE_TABS_SNAPSHOT_KEY])
+    ? storedSnapshot[PALETTE_TABS_SNAPSHOT_KEY]
+    : undefined;
+};
+
 const normalizeError = (error: unknown): string => {
   return error instanceof Error ? error.message : 'The browser action failed.';
 };
@@ -161,12 +170,17 @@ const openOverlay = async (
   }
 
   await chrome.action.setPopup({ tabId, popup: '' });
-  const storedSnapshot: Record<string, unknown> = await chrome.storage.session
-    .get(PALETTE_TABS_SNAPSHOT_KEY)
-    .catch(() => ({}));
-  const tabsSnapshot = isPaletteTabsSnapshot(storedSnapshot[PALETTE_TABS_SNAPSHOT_KEY])
-    ? storedSnapshot[PALETTE_TABS_SNAPSHOT_KEY]
-    : undefined;
+  let tabsSnapshot = await readPaletteTabsSnapshot();
+  if (!tabsSnapshot) {
+    // Cold session: build the same list the palette would fetch, then open with it.
+    const listed = await listTabs();
+    const focused = listed.find((tab) => tab.active);
+    tabsSnapshot = {
+      tabs: listed,
+      currentTabId: focused?.id ?? null,
+      currentWindowId: focused?.windowId ?? null,
+    };
+  }
   const request = { action: 'overlay:open', mode, autoSwitchOnRelease, openedAt, releaseKey, tabsSnapshot };
 
   try {
@@ -1252,6 +1266,11 @@ const listTabs = async (): Promise<
 
   return listed;
 };
+
+// Warm the overlay/popup snapshot after session name init so the first open is not empty.
+void tabNameSessionInitialization.finally(() => {
+  void listTabs().catch(() => undefined);
+});
 
 const activateTab = async (tabId: number, sourceTabId?: number): Promise<boolean> => {
   const tab = await chrome.tabs.get(tabId);

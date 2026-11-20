@@ -18,6 +18,8 @@ interface UsePaletteTabsOptions {
 
 type SplitCapabilities = { create: boolean; unsplit: boolean };
 
+const TAB_NAME_SESSION_KEY = 'tabNameIdsCurrentSession';
+
 const toOptimisticManagedTabs = (
   tabs: chrome.tabs.Tab[],
   names: ReturnType<typeof normalizeTabNames>,
@@ -53,10 +55,25 @@ const withGroupLabels = (tabs: ManagedTab[], groups: chrome.tabGroups.TabGroup[]
   });
 };
 
+const seedFromSnapshot = (
+  snapshot: PaletteTabsSnapshot | null | undefined,
+): { tabs: ManagedTab[]; currentTabId: number | null; currentWindowId: number | null } | null => {
+  if (!isPaletteTabsSnapshot(snapshot) || !snapshot.tabs.length) {
+    return null;
+  }
+
+  return {
+    tabs: snapshot.tabs,
+    currentTabId: snapshot.currentTabId,
+    currentWindowId: snapshot.currentWindowId,
+  };
+};
+
 export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: UsePaletteTabsOptions) => {
-  const [tabs, setTabs] = useState<ManagedTab[]>([]);
-  const [currentTabId, setCurrentTabId] = useState<number | null>(null);
-  const [currentWindowId, setCurrentWindowId] = useState<number | null>(null);
+  const seed = seedFromSnapshot(initialTabsSnapshot);
+  const [tabs, setTabs] = useState<ManagedTab[]>(() => seed?.tabs ?? []);
+  const [currentTabId, setCurrentTabId] = useState<number | null>(() => seed?.currentTabId ?? null);
+  const [currentWindowId, setCurrentWindowId] = useState<number | null>(() => seed?.currentWindowId ?? null);
 
   const [permissions, setPermissions] = useState<Set<string>>(() => new Set());
   const [groups, setGroups] = useState<chrome.tabGroups.TabGroup[]>([]);
@@ -130,7 +147,6 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
     let nextTabs: ManagedTab[];
 
     try {
-      // tabs:list is sorted with the focused normal-window active tab first.
       nextTabs = await sendBackground('tabs:list');
     } catch (error: unknown) {
       if (requestVersion === tabRefreshVersion.current) {
@@ -169,9 +185,18 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
     }
 
     setGroups(nextGroups);
-    // Merge into current state so an optimistic pin/mute/rename is not replayed away.
     setTabs((current) => withGroupLabels(current.length ? current : mergePending(nextTabs), nextGroups));
   }, [ensureCaps, mergePending]);
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current) {
+      clearTimeout(refreshTimer.current);
+    }
+
+    refreshTimer.current = setTimeout(() => {
+      void refreshTabs().catch(() => notifyRef.current('Could not update open tabs.'));
+    }, 32);
+  }, [refreshTabs]);
 
   const patchTab = useCallback((tabId: number, patch: Partial<ManagedTab>) => {
     pendingPatches.current.set(tabId, { ...pendingPatches.current.get(tabId), ...patch });
@@ -179,24 +204,35 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
   }, []);
 
   const settleTabPatch = useCallback((tabId: number, patch?: Partial<ManagedTab>) => {
-    pendingPatches.current.delete(tabId);
+    const pending = pendingPatches.current.get(tabId);
 
     if (patch) {
+      if (pending) {
+        const next: Partial<ManagedTab> = { ...pending };
+        for (const key of Object.keys(patch) as Array<keyof ManagedTab>) {
+          delete next[key];
+        }
+
+        if (Object.keys(next).length) {
+          pendingPatches.current.set(tabId, next);
+        } else {
+          pendingPatches.current.delete(tabId);
+        }
+      }
+
       setTabs((current) => current.map((tab) => (tab.id === tabId ? { ...tab, ...patch } : tab)));
+    } else {
+      pendingPatches.current.delete(tabId);
     }
-  }, []);
+
+    // Drop in-flight list responses that started before this settlement.
+    tabRefreshVersion.current++;
+    scheduleRefresh();
+  }, [scheduleRefresh]);
 
   useEffect(() => {
     performance.clearMarks('cc:ui-mounted');
     performance.mark('cc:ui-mounted');
-
-    if (isPaletteTabsSnapshot(initialTabsSnapshot) && initialTabsSnapshot.tabs.length) {
-      paintOptimistic(
-        initialTabsSnapshot.tabs,
-        initialTabsSnapshot.currentTabId,
-        initialTabsSnapshot.currentWindowId,
-      );
-    }
 
     const loadPermissions = async () => {
       try {
@@ -213,19 +249,7 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
       }
     };
 
-    const scheduleRefresh = () => {
-      if (refreshTimer.current) {
-        clearTimeout(refreshTimer.current);
-      }
-
-      refreshTimer.current = setTimeout(() => {
-        void refreshTabs().catch(() => notifyRef.current('Could not update open tabs.'));
-      }, 32);
-    };
-
     const hydrateFromSessionCache = async () => {
-      // Content-script overlays cannot read chrome.storage.session; they get a snapshot
-      // through overlay:open instead.
       if (surface === 'overlay') {
         return;
       }
@@ -248,17 +272,21 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
         return;
       }
 
-      const [queried, focusedWindow, storedNames] = await Promise.all([
+      const [queried, focusedWindow, storedNames, sessionMarker] = await Promise.all([
         chrome.tabs.query({}),
         chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null),
         chrome.storage.local.get(TAB_NAMES_STORAGE_KEY),
+        chrome.storage.session.get(TAB_NAME_SESSION_KEY),
       ]);
 
       if (hasLiveTabs.current) {
         return;
       }
 
-      const names = normalizeTabNames(storedNames[TAB_NAMES_STORAGE_KEY]);
+      // Match background: no numeric-ID name joins until this browser session is ready.
+      const names = sessionMarker[TAB_NAME_SESSION_KEY]
+        ? normalizeTabNames(storedNames[TAB_NAMES_STORAGE_KEY])
+        : {};
       const optimistic = toOptimisticManagedTabs(queried, names);
       const focusedWindowId = focusedWindow?.id;
       const active =
@@ -297,7 +325,7 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
 
       chrome.runtime.onMessage.removeListener(handleRuntimeMessage);
     };
-  }, [initialTabsSnapshot, mergePending, paintOptimistic, refreshTabs, surface]);
+  }, [paintOptimistic, refreshTabs, scheduleRefresh, surface]);
 
   return {
     tabs,

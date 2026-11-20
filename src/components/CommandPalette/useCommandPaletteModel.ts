@@ -955,19 +955,21 @@ export const useCommandPaletteModel = ({
         const previousCustomName = previousTab?.customName;
         const previousOriginalTitle = previousTab?.originalTitle;
 
-        // Paint Keybar + Chrome's tab strip immediately (do not wait on storage).
+        // Paint the row immediately; strip apply for set-name is optimistic, clears stay
+        // persistence-owned so storage rollback can re-apply the previous override.
         patchTab(tabId, {
           customName: nextName || undefined,
           originalTitle: nextName
             ? (previousOriginalTitle ?? previousTab?.title ?? previousTab?.url)
             : previousOriginalTitle,
         });
-        void applyStripTitleNow(tabId, nextName, previousTab?.url, {
-          previousCustomName,
-          originalTitle: previousOriginalTitle ?? previousTab?.title,
-        });
+        if (nextName) {
+          void applyStripTitleNow(tabId, nextName, previousTab?.url, {
+            previousCustomName,
+            originalTitle: previousOriginalTitle ?? previousTab?.title,
+          });
+        }
         await closeDialog();
-        notify(nextName ? 'Tab name saved.' : 'Custom tab name removed.', 'success');
 
         void sendBackground('tabs:rename', { tabId, name: renameValue })
           .then((result) => {
@@ -983,7 +985,8 @@ export const useCommandPaletteModel = ({
                 return;
               }
 
-              settleTabPatch(tabId);
+              settleTabPatch(tabId, { customName: undefined, originalTitle: previousOriginalTitle });
+              notify('Custom tab name removed.', 'success');
               return;
             }
 
@@ -1005,7 +1008,10 @@ export const useCommandPaletteModel = ({
                     : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
                 result.record?.showInTabStrip ? 'error' : 'success',
               );
+              return;
             }
+
+            notify('Tab name saved.', 'success');
           })
           .catch((error: unknown) => {
             patchTab(tabId, { customName: previousCustomName, originalTitle: previousOriginalTitle });
