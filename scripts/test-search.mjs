@@ -729,10 +729,7 @@ test('search ranking and navigation behavior', async () => {
     const mixedResults = searchItems(mixedLocalItems, 'project').map((item) => item.id);
     const googleIndex = mixedResults.indexOf('search-google');
     assert.ok(googleIndex >= 0, 'Google fallback remains available beside local matches');
-    assert.ok(
-      mixedResults.indexOf('tab-project') < googleIndex,
-      'matching tabs stay above the Google fallback',
-    );
+    assert.ok(mixedResults.indexOf('tab-project') < googleIndex, 'matching tabs stay above the Google fallback');
     assert.ok(
       mixedResults.indexOf('bookmark-project') < googleIndex,
       'matching bookmarks stay above the Google fallback',
@@ -740,6 +737,42 @@ test('search ranking and navigation behavior', async () => {
     assert.ok(
       googleIndex < mixedResults.indexOf('history-project'),
       'matching history stays below the Google fallback',
+    );
+    const historyFlood = Array.from({ length: 120 }, (_, index) => ({
+      id: `history-flood-${index}`,
+      type: 'history',
+      title: `Project notes ${index}`,
+      subtitle: 'History result',
+      icon: '◷',
+      url: `https://example.com/flood/${index}`,
+      lastVisitTime: 1000 - index,
+    }));
+    const floodedResults = searchItems(
+      [
+        {
+          id: 'bookmark-project-notes',
+          type: 'bookmark',
+          title: 'Project notes',
+          subtitle: 'Bookmark',
+          icon: '☆',
+          url: 'https://example.com/notes',
+        },
+        ...historyFlood,
+      ],
+      'project notes',
+    ).map((item) => item.id);
+    assert.ok(
+      floodedResults.includes('bookmark-project-notes'),
+      'a matching bookmark survives a history flood above the Google fallback',
+    );
+    assert.ok(
+      floodedResults.indexOf('bookmark-project-notes') < floodedResults.indexOf('search-google'),
+      'the surviving bookmark still ranks above Google',
+    );
+    assert.equal(
+      floodedResults[0],
+      'bookmark-project-notes',
+      'exact bookmark title stays the Enter target ahead of Google and history',
     );
     assert.equal(
       findSearchProvider('YouTube')?.id,

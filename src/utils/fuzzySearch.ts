@@ -289,10 +289,19 @@ export const searchItems = (
     url: fallbackProvider.urlTemplate.replace('%s', encodeURIComponent(normalized)),
   };
 
-  // Unmatched-query Google fallback sits above history, below other local matches.
-  const nonHistory = matches.filter((item) => item.type !== 'history');
-  const history = matches.filter((item) => item.type === 'history');
-  return [...nonHistory, searchItem, ...history].slice(0, 100);
+  // Rank non-history first so a history flood cannot consume the cap and hide
+  // tabs/bookmarks/commands beneath the Google fallback.
+  const nonHistory = rankItems(
+    filteredItems.filter((item) => item.type !== 'history'),
+    localQuery,
+    99,
+  );
+  const history = rankItems(
+    filteredItems.filter((item) => item.type === 'history'),
+    localQuery,
+    Math.max(0, 100 - nonHistory.length - 1),
+  );
+  return [...nonHistory, searchItem, ...history];
 };
 
 export const searchProviderItems = (
