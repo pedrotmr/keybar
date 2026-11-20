@@ -25,5 +25,5 @@ The order of rows in the Command Bar list for a query.
 _Avoid_: Relevance only (when meaning the full ordered stack of types)
 
 **Active result**:
-The highlighted row that Enter activates. Follows the top of result ranking unless the user moves with arrow keys.
+The highlighted row that Enter activates. Defaults to the top of result ranking; the user can change it with the keyboard or pointer.
 _Avoid_: Focus (when meaning the selected result row), selection (ambiguous with multi-select)

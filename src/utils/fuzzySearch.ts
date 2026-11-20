@@ -256,26 +256,26 @@ export const searchItems = (
     tabsOnly && items.some((item) => item.type !== 'tab') ? items.filter((item) => item.type === 'tab') : items;
 
   const localQuery = providerQuery?.query ?? normalized;
-  const matchLimit = providerQuery || (!tabsOnly && allowFallback) ? 99 : 100;
-  const matches = rankItems(filteredItems, localQuery, matchLimit);
 
   if (providerQuery) {
+    const matches = rankItems(filteredItems, localQuery, 99);
     const providerItem = createProviderSearchItem(providerQuery.provider, providerQuery.query);
     return [providerItem, ...matches];
   }
 
   if (tabsOnly) {
-    return matches;
+    return rankItems(filteredItems, localQuery, 100);
   }
 
   const navigationUrl = normalizeNavigationUrl(normalized);
 
   if (navigationUrl) {
+    const matches = rankItems(filteredItems, localQuery, allowFallback ? 99 : 100);
     return [createNavigationItem(navigationUrl), ...matches].slice(0, 100);
   }
 
   if (!allowFallback) {
-    return matches;
+    return rankItems(filteredItems, localQuery, 100);
   }
 
   const fallbackProvider = searchProviders[0];

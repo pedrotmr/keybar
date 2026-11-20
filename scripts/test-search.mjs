@@ -752,7 +752,7 @@ test('search ranking and navigation behavior', async () => {
         {
           id: 'bookmark-project-notes',
           type: 'bookmark',
-          title: 'Project notes',
+          title: 'Archive of project notes',
           subtitle: 'Bookmark',
           icon: '☆',
           url: 'https://example.com/notes',
@@ -761,19 +761,13 @@ test('search ranking and navigation behavior', async () => {
       ],
       'project notes',
     ).map((item) => item.id);
-    assert.ok(
-      floodedResults.includes('bookmark-project-notes'),
-      'a matching bookmark survives a history flood above the Google fallback',
+    assert.deepEqual(
+      floodedResults.slice(0, 2),
+      ['bookmark-project-notes', 'search-google'],
+      'a weaker bookmark still leads Google when history would flood a shared cap',
     );
-    assert.ok(
-      floodedResults.indexOf('bookmark-project-notes') < floodedResults.indexOf('search-google'),
-      'the surviving bookmark still ranks above Google',
-    );
-    assert.equal(
-      floodedResults[0],
-      'bookmark-project-notes',
-      'exact bookmark title stays the Enter target ahead of Google and history',
-    );
+    assert.equal(floodedResults.length, 100, 'the ranked list still fills the result cap');
+    assert.ok(floodedResults.includes('history-flood-0'), 'history still fills remaining slots beneath Google');
     assert.equal(
       findSearchProvider('YouTube')?.id,
       'youtube',
