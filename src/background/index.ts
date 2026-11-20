@@ -67,7 +67,7 @@ const overlayTabRegistry = new OverlayTabRegistry({
 });
 
 setTabNamesChangeNotifier(() => {
-  void chrome.storage.session.remove(PALETTE_TABS_SNAPSHOT_KEY).catch(() => undefined);
+  invalidatePaletteTabsSnapshot();
   void chrome.runtime.sendMessage({ action: 'ui:tabs-changed' }).catch(() => undefined);
   void overlayTabRegistry.broadcast().catch(() => undefined);
 });
@@ -104,15 +104,23 @@ const normalizeError = (error: unknown): string => {
   return error instanceof Error ? error.message : 'The browser action failed.';
 };
 
+let paletteSnapshotWriteGeneration = 0;
+
+const invalidatePaletteTabsSnapshot = (): void => {
+  paletteSnapshotWriteGeneration += 1;
+  void chrome.storage.session.remove(PALETTE_TABS_SNAPSHOT_KEY).catch(() => undefined);
+};
+
 const broadcastTabChanges = (): void => {
+  // Invalidate immediately so a reopen during the debounce cannot paint a stale snapshot.
+  invalidatePaletteTabsSnapshot();
+
   if (tabChangeBroadcastTimer) {
     clearTimeout(tabChangeBroadcastTimer);
   }
 
   tabChangeBroadcastTimer = setTimeout(() => {
     tabChangeBroadcastTimer = null;
-    // Drop the warm snapshot so the next open cannot paint pre-change pins/renames/closes.
-    void chrome.storage.session.remove(PALETTE_TABS_SNAPSHOT_KEY).catch(() => undefined);
     void chrome.runtime.sendMessage({ action: 'ui:tabs-changed' }).catch(() => undefined);
     void overlayTabRegistry.broadcast().catch(() => undefined);
   }, 24);
@@ -557,6 +565,14 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.windows.onRemoved?.addListener((windowId) => {
   void clearTabSwitcher(windowId).catch(() => undefined);
   tabPreviewCaptureAt.delete(windowId);
+});
+chrome.windows.onFocusChanged?.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    return;
+  }
+
+  // Focused window drives currentTabId in the warm snapshot.
+  broadcastTabChanges();
 });
 chrome.tabs.onUpdated.addListener((_tabId, changes) => {
   if (
@@ -1174,6 +1190,7 @@ const setActiveTabZoom = async (action: string): Promise<boolean> => {
 };
 
 const listTabs = async (): Promise<PaletteTabsSnapshot> => {
+  const writeGeneration = paletteSnapshotWriteGeneration;
   const [tabs, windows, names, focusedWindow] = await Promise.all([
     chrome.tabs.query({}),
     chrome.windows.getAll({ windowTypes: ['normal'] }),
@@ -1231,7 +1248,10 @@ const listTabs = async (): Promise<PaletteTabsSnapshot> => {
     currentWindowId,
   } satisfies PaletteTabsSnapshot;
 
-  void chrome.storage.session.set({ [PALETTE_TABS_SNAPSHOT_KEY]: snapshot }).catch(() => undefined);
+  // Skip writing if a newer invalidation landed while this list was in flight.
+  if (writeGeneration === paletteSnapshotWriteGeneration) {
+    void chrome.storage.session.set({ [PALETTE_TABS_SNAPSHOT_KEY]: snapshot }).catch(() => undefined);
+  }
 
   return snapshot;
 };
