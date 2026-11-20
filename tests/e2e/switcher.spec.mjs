@@ -103,35 +103,89 @@ test('Tab Switcher keeps the selected card visible while navigating at a narrow 
     { sourceId, surfaceFile: contentSurfaces.tabs.file },
   );
 
-  const panel = source.locator('.tab-switcher-panel[role="listbox"]');
-  await expect(panel).toBeVisible();
-  await expect(panel).toBeFocused();
-  await expect.poll(() => panel.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-  const selectedCardIsFullyVisible = () =>
-    panel.evaluate((element) => {
-      const card = element.querySelector('[aria-selected="true"]');
-      if (!card) {
-        return false;
-      }
+  const surfaceId = `${id}-command-center-surface`;
+  const readPanel = () =>
+    worker.evaluate(
+      async ({ sourceId, surfaceId }) => {
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId: sourceId },
+          world: 'ISOLATED',
+          func: (surfaceId) => {
+            const surface = document.getElementById(surfaceId);
+            if (!(surface instanceof HTMLElement)) {
+              return null;
+            }
 
-      const bounds = card.getBoundingClientRect();
-      const viewportLeft = element.getBoundingClientRect().left + element.clientLeft;
-      const viewportRight = viewportLeft + element.clientWidth;
-      return bounds.left >= viewportLeft - 0.5 && bounds.right <= viewportRight + 0.5;
-    });
+            const shadowRoot = chrome.dom.openOrClosedShadowRoot(surface);
+            const panel = shadowRoot?.querySelector('.tab-switcher-panel[role="listbox"]');
+            const selectedCard = panel?.querySelector('[aria-selected="true"]');
+            if (!(panel instanceof HTMLElement) || !(selectedCard instanceof HTMLElement)) {
+              return null;
+            }
 
+            const panelBounds = panel.getBoundingClientRect();
+            const cardBounds = selectedCard.getBoundingClientRect();
+            const viewportLeft = panelBounds.left + panel.clientLeft;
+            const viewportRight = viewportLeft + panel.clientWidth;
+
+            return {
+              animationFinished: panel.getAnimations().every((animation) => animation.playState === 'finished'),
+              focused: shadowRoot.activeElement === panel,
+              scrollLeft: panel.scrollLeft,
+              scrollable: panel.scrollWidth > panel.clientWidth,
+              selectedLabel: selectedCard.getAttribute('aria-label'),
+              selectedIndex: Number.parseInt(selectedCard.getAttribute('aria-label') ?? '', 10) - 1,
+              selectedCardIsFullyVisible:
+                cardBounds.left >= viewportLeft - 0.5 && cardBounds.right <= viewportRight + 0.5,
+              bounds: {
+                x: panelBounds.x,
+                y: panelBounds.y,
+                width: panelBounds.width,
+                height: panelBounds.height,
+              },
+            };
+          },
+          args: [surfaceId],
+        });
+
+        return result?.result ?? null;
+      },
+      { sourceId, surfaceId },
+    );
+
+  await expect.poll(async () => (await readPanel())?.focused).toBe(true);
+  await expect.poll(async () => (await readPanel())?.scrollable).toBe(true);
+  await expect.poll(async () => (await readPanel())?.animationFinished).toBe(true);
+  const initiallySelectedLabel = (await readPanel())?.selectedLabel;
+  expect(initiallySelectedLabel).toBeTruthy();
+  await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
+
+  await source.keyboard.press('Home');
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(0);
+  await source.setViewportSize({ width: 1200, height: 800 });
+  await source.keyboard.press('End');
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(6);
+  await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
+
+  await source.setViewportSize({ width: 600, height: 800 });
+  await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
+
+  const selectedBeforeArrow = (await readPanel())?.selectedIndex;
+  expect(selectedBeforeArrow).toBeDefined();
   await source.keyboard.press('ArrowRight');
-  await expect.poll(selectedCardIsFullyVisible).toBe(true);
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe((selectedBeforeArrow + 1) % 7);
+  await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
 
-  const panelBounds = await panel.boundingBox();
-  expect(panelBounds).not.toBeNull();
+  const panelBounds = (await readPanel())?.bounds;
+  expect(panelBounds).toBeDefined();
   await source.mouse.move(panelBounds.x + panelBounds.width - 18, panelBounds.y + panelBounds.height / 2);
-  let previousScrollLeft = await panel.evaluate((element) => element.scrollLeft);
+  let previousScrollLeft = (await readPanel())?.scrollLeft;
+  expect(previousScrollLeft).toBeDefined();
   for (let index = 0; index < 3; index++) {
     await source.mouse.wheel(0, 25);
-    await expect.poll(() => panel.evaluate((element) => element.scrollLeft)).toBeGreaterThan(previousScrollLeft);
-    previousScrollLeft = await panel.evaluate((element) => element.scrollLeft);
-    await expect.poll(selectedCardIsFullyVisible).toBe(true);
+    await expect.poll(async () => (await readPanel())?.scrollLeft).toBeGreaterThan(previousScrollLeft);
+    previousScrollLeft = (await readPanel())?.scrollLeft;
+    await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
   }
 
   await root.detach();

@@ -197,16 +197,32 @@ export const useTabSwitcherModel = ({
       return;
     }
 
-    const panelBounds = panel.getBoundingClientRect();
-    const cardBounds = selectedCard.getBoundingClientRect();
-    const viewportLeft = panelBounds.left + panel.clientLeft;
-    const viewportRight = viewportLeft + panel.clientWidth;
+    const keepSelectedCardVisible = () => {
+      // offsetLeft/offsetWidth stay in layout coordinates while the opening
+      // animation applies a transform to the panel and its ancestors.
+      const cardLeft = selectedCard.offsetLeft;
+      const cardRight = cardLeft + selectedCard.offsetWidth;
+      const viewportLeft = panel.scrollLeft;
+      const viewportRight = viewportLeft + panel.clientWidth;
 
-    if (cardBounds.left < viewportLeft) {
-      panel.scrollLeft -= viewportLeft - cardBounds.left;
-    } else if (cardBounds.right > viewportRight) {
-      panel.scrollLeft += cardBounds.right - viewportRight;
+      if (cardLeft < viewportLeft) {
+        panel.scrollLeft = cardLeft;
+      } else if (cardRight > viewportRight) {
+        panel.scrollLeft = cardRight - panel.clientWidth;
+      }
+    };
+
+    keepSelectedCardVisible();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
     }
+
+    const resizeObserver = new ResizeObserver(keepSelectedCardVisible);
+    resizeObserver.observe(panel);
+    resizeObserver.observe(selectedCard);
+
+    return () => resizeObserver.disconnect();
   }, [selectedIndex, tabs]);
 
   useLayoutEffect(() => {
