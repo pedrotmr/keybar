@@ -69,7 +69,7 @@ export const useCommandPaletteModel = ({
   const [groupTargetId, setGroupTargetId] = useState('new');
   const [moveWindowId, setMoveWindowId] = useState('new');
 
-  const { preferences, viewport, updatePreferences } = usePaletteAppearance({
+  const { preferences, updatePreferences } = usePaletteAppearance({
     initialPreferences: initialTheme,
     themeRoot,
     cacheInLocalStorage: cacheThemeInLocalStorage,
@@ -332,7 +332,7 @@ export const useCommandPaletteModel = ({
   const isUnfilteredExpandedView =
     mode === 'commands' && preferences.windowMode === 'expanded' && !query.trim() && !activeProvider;
 
-  const openingResultLimit = initialResultLimit(preferences.size, surface, viewport);
+  const openingResultLimit = initialResultLimit(preferences.size);
 
   const results = useMemo(() => {
     if (mode === 'commands' && preferences.windowMode === 'compact' && !query.trim() && !activeProvider) {

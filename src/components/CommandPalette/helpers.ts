@@ -4,7 +4,6 @@ import { searchItems, searchProviderItems } from '@/utils/fuzzySearch';
 import type { ResultsEmptyState } from '../ResultsList/types';
 import type {
   FlowDialog,
-  PaletteViewport,
   ToastMessage,
   WindowWithCommandCenterTimings,
   CommandPaletteMode,
@@ -59,11 +58,7 @@ export const resultPageSize = (list: HTMLElement): number => {
   return Math.max(1, Math.floor((viewport.clientHeight - padding) / Math.max(1, rowPitch)));
 };
 
-export const initialResultLimit = (
-  size: CommandBarSize,
-  _surface: 'popup' | 'overlay',
-  _viewport: PaletteViewport,
-): number => {
+export const initialResultLimit = (size: CommandBarSize): number => {
   // Keep the opening list aligned with --cc-visible-result-rows in global.css.
   const visibleRows: Record<CommandBarSize, number> = { compact: 7, standard: 8, wide: 9 };
   return visibleRows[size];
