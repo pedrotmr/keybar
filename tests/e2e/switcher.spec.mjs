@@ -179,11 +179,15 @@ test('Tab Switcher keeps the selected card visible while navigating at a narrow 
 
   const panelBounds = (await readPanel())?.bounds;
   expect(panelBounds).toBeDefined();
-  await source.mouse.move(panelBounds.x + panelBounds.width - 18, panelBounds.y + panelBounds.height / 2);
+  const selectedBeforeWheel = (await readPanel())?.selectedIndex;
+  expect(selectedBeforeWheel).toBe(0);
+  await source.mouse.move(panelBounds.x + 5, panelBounds.y + panelBounds.height / 2);
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(selectedBeforeWheel);
   let previousScrollLeft = (await readPanel())?.scrollLeft;
   expect(previousScrollLeft).toBeDefined();
   for (let index = 0; index < 3; index++) {
     await source.mouse.wheel(0, 25);
+    await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(selectedBeforeWheel);
     await expect.poll(async () => (await readPanel())?.scrollLeft).toBeGreaterThan(previousScrollLeft);
     previousScrollLeft = (await readPanel())?.scrollLeft;
     await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);

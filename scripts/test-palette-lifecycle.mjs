@@ -341,6 +341,14 @@ test('command palette lifecycle', async () => {
     );
     assert.equal(model.activeProvider, null, 'Backspace returns from provider scope to command search');
     assert.equal(model.scopeAnnouncement, 'Returned to Command Bar search.', 'returning announces command search');
+    await act(async () => model.activateSuggestedProvider(youtubeProvider));
+    await act(async () => model.handleSurfaceEscape(keyEvent('Escape')));
+    assert.equal(model.activeProvider, null, 'Escape leaves provider scope');
+    assert.equal(
+      model.scopeAnnouncement,
+      'Returned to Command Bar search.',
+      'Escape announces the return to command search',
+    );
     await unmount(scopeEnv);
 
     const keyboardTabs = [

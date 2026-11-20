@@ -495,7 +495,11 @@ export const useCommandPaletteModel = ({
     }
 
     if (mode !== 'commands' || activeProvider || query.trim()) {
+      const wasInProvider = Boolean(activeProvider);
       changeMode('commands');
+      if (wasInProvider) {
+        setScopeAnnouncement('Returned to Command Bar search.');
+      }
       return;
     }
 
