@@ -60,6 +60,14 @@ test('command palette lifecycle', async () => {
     groupId,
     pinned: false,
   });
+  const tabList = (...tabs) => {
+    const list = tabs.flat();
+    return {
+      tabs: list,
+      currentTabId: list.find((entry) => entry.active)?.id ?? list[0]?.id ?? null,
+      currentWindowId: list.find((entry) => entry.active)?.windowId ?? list[0]?.windowId ?? null,
+    };
+  };
   const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
   let root;
   let model;
@@ -81,7 +89,7 @@ test('command palette lifecycle', async () => {
       const storageEvent = event();
       const env = { granted, calls: [], runtimeEvent, storageEvent };
       const defaults = {
-        'tabs:list': () => [tab('Current tab')],
+        'tabs:list': () => tabList(tab('Current tab')),
         'tabs:current': () => tab('Current tab'),
         'permissions:contains': () => false,
         'permissions:get-all': () => ({ permissions: env.granted }),
@@ -160,9 +168,9 @@ test('command palette lifecycle', async () => {
       mock.timers.reset();
     }
     assert.equal(snapshots.length, 2, 'a browser update can overlap the initial request');
-    await act(async () => snapshots[1].resolve([tab('Fresh snapshot')]));
+    await act(async () => snapshots[1].resolve(tabList(tab('Fresh snapshot'))));
     assert.ok(model.results.some((item) => item.title === 'Fresh snapshot'));
-    await act(async () => snapshots[0].resolve([tab('Stale snapshot')]));
+    await act(async () => snapshots[0].resolve(tabList(tab('Stale snapshot'))));
     assert.ok(
       model.results.some((item) => item.title === 'Fresh snapshot'),
       'late initial data cannot overwrite newer results',
@@ -358,7 +366,7 @@ test('command palette lifecycle', async () => {
     const activatedTabIds = [];
     const keyboardSelectionEnv = await mount({
       handlers: {
-        'tabs:list': () => keyboardTabs,
+        'tabs:list': () => tabList(...keyboardTabs),
         'tabs:current': () => keyboardTabs[0],
         'tabs:activate': (message) => {
           activatedTabIds.push(message.tabId);
@@ -455,7 +463,7 @@ test('command palette lifecycle', async () => {
     const groupEnv = await mount({
       granted: ['tabGroups'],
       handlers: {
-        'tabs:list': () => [tab('Grouped tab', 7)],
+        'tabs:list': () => tabList(tab('Grouped tab', 7)),
         'tabs:current': () => tab('Grouped tab', 7),
         'permissions:contains': () => true,
         'groups:list': () => [{ id: 7, title: 'Projects', color: 'blue', collapsed: groupCollapsed, windowId: 1 }],

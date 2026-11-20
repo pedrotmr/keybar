@@ -74,8 +74,10 @@ const bumpStripGeneration = (tabId: number): number => {
   return next;
 };
 
+const currentStripGeneration = (tabId: number): number => stripGenerationByTab.get(tabId) ?? 0;
+
 const isCurrentStripGeneration = (tabId: number, generation: number): boolean =>
-  stripGenerationByTab.get(tabId) === generation;
+  currentStripGeneration(tabId) === generation;
 
 /**
  * Re-inject strip titles without occupying the name-mutation queue. Rename/list
@@ -97,7 +99,7 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
       targets.map(async (name) => {
         try {
           // Do not bump — user rename/clear owns generation priority over passive reapply.
-          const generation = stripGenerationByTab.get(name.tabId) ?? 0;
+          const generation = currentStripGeneration(name.tabId);
           const tab = await chrome.tabs.get(name.tabId);
           const origin = getHttpOrigin(tab.url);
 
@@ -579,22 +581,20 @@ export const isTabNameSessionReady = async (): Promise<boolean> => {
 };
 
 export const getTabNames = async (): Promise<TabNameMap> => {
-  const [stored, session] = await Promise.all([
-    chrome.storage.local.get(localKey),
-    chrome.storage.session.get(sessionKey),
-  ]);
-
   if (!sessionSafe) {
     return {};
   }
 
-  // Gate numeric-ID joins on the current-session marker so a reused tab ID cannot
-  // inherit another session's name before identity reconciliation runs.
+  // Read the session marker before names so a freshly set marker cannot pair with a
+  // stale parallel names read from before reconciliation finished.
+  const session = await chrome.storage.session.get(sessionKey);
+
   if (!session[sessionKey]) {
     void tabNameSessionInitialization;
     return {};
   }
 
+  const stored = await chrome.storage.local.get(localKey);
   const names = normalizeTabNames(stored[localKey]);
 
   // Reattach off the list path so Command Bar open is not blocked on reconciliation.
@@ -703,7 +703,7 @@ export const handleUpdatedTabName = async (
     const saved = normalizeTabNames(stored[localKey])[String(tabId)];
 
     if (saved?.showInTabStrip && saved.tabStripOrigin) {
-      const generation = stripGenerationByTab.get(tabId) ?? 0;
+      const generation = currentStripGeneration(tabId);
       applyStripTitleInBackground(tabId, saved.customName, saved.tabStripOrigin, saved, generation);
     }
   }

@@ -72,7 +72,7 @@ test('loaded extension: keyboard flow, persistence, worker restart and stale res
   await cdp.send('ServiceWorker.stopWorker', { versionId: version.versionId });
   const response = await menu.evaluate(() => chrome.runtime.sendMessage({ action: 'tabs:list' }));
   expect(response.success).toBe(true);
-  expect(response.data.some((tab) => tab.url === 'https://audit.test/target')).toBe(true);
+  expect(response.data.tabs.some((tab) => tab.url === 'https://audit.test/target')).toBe(true);
   const denied = await menu.evaluate(() => chrome.runtime.sendMessage({ action: 'bookmarks:list' }));
   expect(denied.success).toBe(false);
   await cdp.detach();
@@ -85,7 +85,7 @@ test('loaded extension: keyboard flow, persistence, worker restart and stale res
       const response = await send(message, ...args);
       if (message.action === 'tabs:list' && !window.auditHeldList) {
         window.auditHeldList = true;
-        window.auditOldTabs = response.data.map((tab) => tab.title);
+        window.auditOldTabs = response.data.tabs.map((tab) => tab.title);
         return new Promise((resolve) => {
           window.auditReleaseList = () => resolve(response);
         });

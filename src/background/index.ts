@@ -68,6 +68,7 @@ const overlayTabRegistry = new OverlayTabRegistry({
 });
 
 setTabNamesChangeNotifier(() => {
+  void chrome.storage.session.remove(PALETTE_TABS_SNAPSHOT_KEY).catch(() => undefined);
   void chrome.runtime.sendMessage({ action: 'ui:tabs-changed' }).catch(() => undefined);
   void overlayTabRegistry.broadcast().catch(() => undefined);
 });
@@ -111,6 +112,8 @@ const broadcastTabChanges = (): void => {
 
   tabChangeBroadcastTimer = setTimeout(() => {
     tabChangeBroadcastTimer = null;
+    // Drop the warm snapshot so the next open cannot paint pre-change pins/renames/closes.
+    void chrome.storage.session.remove(PALETTE_TABS_SNAPSHOT_KEY).catch(() => undefined);
     void chrome.runtime.sendMessage({ action: 'ui:tabs-changed' }).catch(() => undefined);
     void overlayTabRegistry.broadcast().catch(() => undefined);
   }, 24);
@@ -172,14 +175,8 @@ const openOverlay = async (
   await chrome.action.setPopup({ tabId, popup: '' });
   let tabsSnapshot = await readPaletteTabsSnapshot();
   if (!tabsSnapshot) {
-    // Cold session: build the same list the palette would fetch, then open with it.
-    const listed = await listTabs();
-    const focused = listed.find((tab) => tab.active);
-    tabsSnapshot = {
-      tabs: listed,
-      currentTabId: focused?.id ?? null,
-      currentWindowId: focused?.windowId ?? null,
-    };
+    // Cold / invalidated: build a session-safe list (names join only after session marker).
+    tabsSnapshot = await listTabs();
   }
   const request = { action: 'overlay:open', mode, autoSwitchOnRelease, openedAt, releaseKey, tabsSnapshot };
 
@@ -503,7 +500,7 @@ const listRecentTabs = async (): Promise<Array<SplitAwareTab & { customName?: st
     return [];
   }
 
-  const tabs = await listTabs();
+  const { tabs } = await listTabs();
   return tabs
     .filter((tab) => tab.windowId === current.windowId)
     .sort((a, b) => Number(b.active) - Number(a.active) || (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))
@@ -1198,15 +1195,7 @@ const setActiveTabZoom = async (action: string): Promise<boolean> => {
   return true;
 };
 
-const listTabs = async (): Promise<
-  Array<
-    SplitAwareTab & {
-      customName?: string;
-      originalTitle?: string;
-      windowTitle?: string;
-    }
-  >
-> => {
+const listTabs = async (): Promise<PaletteTabsSnapshot> => {
   const [tabs, windows, names, focusedWindow] = await Promise.all([
     chrome.tabs.query({}),
     chrome.windows.getAll({ windowTypes: ['normal'] }),
@@ -1215,6 +1204,14 @@ const listTabs = async (): Promise<
   ]);
 
   const focusedWindowId = focusedWindow?.id;
+  // Capture current before filtering out Keybar pages so rename-current stays anchored.
+  const focusedRaw =
+    (typeof focusedWindowId === 'number'
+      ? tabs.find((tab) => tab.active && tab.windowId === focusedWindowId)
+      : undefined) ?? tabs.find((tab) => tab.active);
+  const currentTabId = focusedRaw?.id ?? null;
+  const currentWindowId =
+    focusedRaw?.windowId ?? (typeof focusedWindowId === 'number' ? focusedWindowId : null);
 
   const windowTitles = new Map(
     windows.flatMap((window, index) => {
@@ -1250,21 +1247,15 @@ const listTabs = async (): Promise<
         (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0),
     );
 
-  const focusedActive =
-    (typeof focusedWindowId === 'number'
-      ? listed.find((tab) => tab.active && tab.windowId === focusedWindowId)
-      : undefined) ?? listed.find((tab) => tab.active);
-  void chrome.storage.session
-    .set({
-      [PALETTE_TABS_SNAPSHOT_KEY]: {
-        tabs: listed,
-        currentTabId: focusedActive?.id ?? null,
-        currentWindowId: typeof focusedWindowId === 'number' ? focusedWindowId : null,
-      } satisfies PaletteTabsSnapshot,
-    })
-    .catch(() => undefined);
+  const snapshot = {
+    tabs: listed,
+    currentTabId,
+    currentWindowId,
+  } satisfies PaletteTabsSnapshot;
 
-  return listed;
+  void chrome.storage.session.set({ [PALETTE_TABS_SNAPSHOT_KEY]: snapshot }).catch(() => undefined);
+
+  return snapshot;
 };
 
 // Warm the overlay/popup snapshot after session name init so the first open is not empty.

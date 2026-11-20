@@ -14,7 +14,6 @@ import { useSavedPages } from './useSavedPages';
 import { usePaletteTabs } from './usePaletteTabs';
 import { getCommands } from '@/utils/commands';
 import { bulkCloseTabIds, isBulkCloseAction } from '@/utils/bulkClose';
-import { applyStripTitleNow } from '@/utils/applyStripTitleNow';
 import { normalizeNavigationUrl, sendBackground } from '@/utils/chromeHelpers';
 import { writeClipboardText } from '@/utils/clipboard';
 import { findProviderQueryMatch, getSearchProviderSuggestions, parseProviderQuery } from '@/utils/searchProviders';
@@ -955,28 +954,25 @@ export const useCommandPaletteModel = ({
         const previousCustomName = previousTab?.customName;
         const previousOriginalTitle = previousTab?.originalTitle;
 
-        // Paint the row immediately; strip apply for set-name is optimistic, clears stay
-        // persistence-owned so storage rollback can re-apply the previous override.
-        patchTab(tabId, {
+        // Paint the row immediately. Strip injection stays inside tabs:rename so storage
+        // failure can roll the Chrome title back with the same transaction.
+        const renameToken = patchTab(tabId, {
           customName: nextName || undefined,
           originalTitle: nextName
             ? (previousOriginalTitle ?? previousTab?.title ?? previousTab?.url)
             : previousOriginalTitle,
         });
-        if (nextName) {
-          void applyStripTitleNow(tabId, nextName, previousTab?.url, {
-            previousCustomName,
-            originalTitle: previousOriginalTitle ?? previousTab?.title,
-          });
-        }
         await closeDialog();
 
         void sendBackground('tabs:rename', { tabId, name: renameValue })
           .then((result) => {
             if (!nextName) {
               if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
-                patchTab(tabId, { customName: previousCustomName, originalTitle: previousOriginalTitle });
-                settleTabPatch(tabId);
+                settleTabPatch(
+                  tabId,
+                  { customName: previousCustomName, originalTitle: previousOriginalTitle },
+                  renameToken,
+                );
                 notify(
                   result.stripReason === 'site-access-required'
                     ? 'Could not remove the custom title from Chrome’s tab strip. Approve access, then try again.'
@@ -985,18 +981,22 @@ export const useCommandPaletteModel = ({
                 return;
               }
 
-              settleTabPatch(tabId, { customName: undefined, originalTitle: previousOriginalTitle });
+              settleTabPatch(tabId, { customName: undefined, originalTitle: previousOriginalTitle }, renameToken);
               notify('Custom tab name removed.', 'success');
               return;
             }
 
             if (result.record) {
-              settleTabPatch(tabId, {
-                customName: result.record.customName,
-                originalTitle: result.record.originalTitle,
-              });
+              settleTabPatch(
+                tabId,
+                {
+                  customName: result.record.customName,
+                  originalTitle: result.record.originalTitle,
+                },
+                renameToken,
+              );
             } else {
-              settleTabPatch(tabId);
+              settleTabPatch(tabId, { customName: undefined, originalTitle: previousOriginalTitle }, renameToken);
             }
 
             if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
@@ -1014,8 +1014,11 @@ export const useCommandPaletteModel = ({
             notify('Tab name saved.', 'success');
           })
           .catch((error: unknown) => {
-            patchTab(tabId, { customName: previousCustomName, originalTitle: previousOriginalTitle });
-            settleTabPatch(tabId);
+            settleTabPatch(
+              tabId,
+              { customName: previousCustomName, originalTitle: previousOriginalTitle },
+              renameToken,
+            );
             notify(error instanceof Error ? error.message : 'Could not rename that tab.');
           });
 
@@ -1076,14 +1079,13 @@ export const useCommandPaletteModel = ({
     }
 
     const nextPinned = !tab.pinned;
-    patchTab(tab.id, { pinned: nextPinned });
+    const token = patchTab(tab.id, { pinned: nextPinned });
 
     try {
       await sendBackground('tabs:pin', { tabId: tab.id, pinned: nextPinned });
-      settleTabPatch(tab.id);
+      settleTabPatch(tab.id, { pinned: nextPinned }, token);
     } catch (error) {
-      patchTab(tab.id, { pinned: tab.pinned });
-      settleTabPatch(tab.id);
+      settleTabPatch(tab.id, { pinned: tab.pinned }, token);
       notify(error instanceof Error ? error.message : 'Could not change the pin state.');
     }
   };
@@ -1095,18 +1097,16 @@ export const useCommandPaletteModel = ({
 
     const nextMuted = !tab.mutedInfo?.muted;
     const previousMutedInfo = tab.mutedInfo;
-    patchTab(tab.id, {
-      mutedInfo: previousMutedInfo
-        ? { ...previousMutedInfo, muted: nextMuted }
-        : { muted: nextMuted, reason: 'user' },
-    });
+    const nextMutedInfo = previousMutedInfo
+      ? { ...previousMutedInfo, muted: nextMuted }
+      : { muted: nextMuted, reason: 'user' as const };
+    const token = patchTab(tab.id, { mutedInfo: nextMutedInfo });
 
     try {
       await sendBackground('tabs:mute', { tabId: tab.id, muted: nextMuted });
-      settleTabPatch(tab.id);
+      settleTabPatch(tab.id, { mutedInfo: nextMutedInfo }, token);
     } catch (error) {
-      patchTab(tab.id, { mutedInfo: previousMutedInfo });
-      settleTabPatch(tab.id);
+      settleTabPatch(tab.id, { mutedInfo: previousMutedInfo }, token);
       notify(error instanceof Error ? error.message : 'Could not change the audio state.');
     }
   };

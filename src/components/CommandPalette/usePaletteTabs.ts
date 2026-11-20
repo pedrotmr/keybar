@@ -85,6 +85,8 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
   const groupsAllowed = useRef<boolean | null>(null);
   const splitSupport = useRef<SplitCapabilities | null>(null);
   const pendingPatches = useRef(new Map<number, Partial<ManagedTab>>());
+  const pendingFieldTokens = useRef(new Map<number, Map<string, number>>());
+  const mutationToken = useRef(0);
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
 
@@ -146,8 +148,11 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
 
     let nextTabs: ManagedTab[];
 
+    let listResult: { tabs: ManagedTab[]; currentTabId: number | null; currentWindowId: number | null };
+
     try {
-      nextTabs = await sendBackground('tabs:list');
+      listResult = await sendBackground('tabs:list');
+      nextTabs = listResult.tabs;
     } catch (error: unknown) {
       if (requestVersion === tabRefreshVersion.current) {
         throw error;
@@ -160,10 +165,9 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
       return;
     }
 
-    const current = nextTabs.find((tab) => tab.active) ?? null;
     setTabs(mergePending(nextTabs));
-    setCurrentTabId(current?.id ?? null);
-    setCurrentWindowId(current?.windowId ?? null);
+    setCurrentTabId(listResult.currentTabId);
+    setCurrentWindowId(listResult.currentWindowId);
     hasLiveTabs.current = true;
     recordTiming('tab-list', performance.now() - started);
 
@@ -198,37 +202,60 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
     }, 32);
   }, [refreshTabs]);
 
-  const patchTab = useCallback((tabId: number, patch: Partial<ManagedTab>) => {
+  const patchTab = useCallback((tabId: number, patch: Partial<ManagedTab>): number => {
+    const token = ++mutationToken.current;
     pendingPatches.current.set(tabId, { ...pendingPatches.current.get(tabId), ...patch });
+    const fieldTokens = pendingFieldTokens.current.get(tabId) ?? new Map<string, number>();
+    for (const key of Object.keys(patch)) {
+      fieldTokens.set(key, token);
+    }
+    pendingFieldTokens.current.set(tabId, fieldTokens);
     setTabs((current) => current.map((tab) => (tab.id === tabId ? { ...tab, ...patch } : tab)));
+    return token;
   }, []);
 
-  const settleTabPatch = useCallback((tabId: number, patch?: Partial<ManagedTab>) => {
-    const pending = pendingPatches.current.get(tabId);
+  const settleTabPatch = useCallback(
+    (tabId: number, patch?: Partial<ManagedTab>, token?: number) => {
+      const pending = pendingPatches.current.get(tabId);
+      const fieldTokens = pendingFieldTokens.current.get(tabId);
 
-    if (patch) {
-      if (pending) {
-        const next: Partial<ManagedTab> = { ...pending };
+      if (patch) {
+        const applied: Partial<ManagedTab> = {};
+        const nextPending: Partial<ManagedTab> = { ...(pending ?? {}) };
+
         for (const key of Object.keys(patch) as Array<keyof ManagedTab>) {
-          delete next[key];
+          if (token !== undefined && fieldTokens?.get(String(key)) !== token) {
+            continue;
+          }
+
+          applied[key] = patch[key] as never;
+          delete nextPending[key];
+          fieldTokens?.delete(String(key));
         }
 
-        if (Object.keys(next).length) {
-          pendingPatches.current.set(tabId, next);
+        if (Object.keys(nextPending).length) {
+          pendingPatches.current.set(tabId, nextPending);
         } else {
           pendingPatches.current.delete(tabId);
         }
+
+        if (fieldTokens && fieldTokens.size === 0) {
+          pendingFieldTokens.current.delete(tabId);
+        }
+
+        if (Object.keys(applied).length) {
+          setTabs((current) => current.map((tab) => (tab.id === tabId ? { ...tab, ...applied } : tab)));
+        }
+      } else if (token === undefined) {
+        pendingPatches.current.delete(tabId);
+        pendingFieldTokens.current.delete(tabId);
       }
 
-      setTabs((current) => current.map((tab) => (tab.id === tabId ? { ...tab, ...patch } : tab)));
-    } else {
-      pendingPatches.current.delete(tabId);
-    }
-
-    // Drop in-flight list responses that started before this settlement.
-    tabRefreshVersion.current++;
-    scheduleRefresh();
-  }, [scheduleRefresh]);
+      tabRefreshVersion.current++;
+      scheduleRefresh();
+    },
+    [scheduleRefresh],
+  );
 
   useEffect(() => {
     performance.clearMarks('cc:ui-mounted');
@@ -272,10 +299,9 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
         return;
       }
 
-      const [queried, focusedWindow, storedNames, sessionMarker] = await Promise.all([
+      const [queried, focusedWindow, sessionMarker] = await Promise.all([
         chrome.tabs.query({}),
         chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null),
-        chrome.storage.local.get(TAB_NAMES_STORAGE_KEY),
         chrome.storage.session.get(TAB_NAME_SESSION_KEY),
       ]);
 
@@ -283,7 +309,10 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
         return;
       }
 
-      // Match background: no numeric-ID name joins until this browser session is ready.
+      // Marker first, then names — avoid pairing a new marker with a pre-reconcile names read.
+      const storedNames = sessionMarker[TAB_NAME_SESSION_KEY]
+        ? await chrome.storage.local.get(TAB_NAMES_STORAGE_KEY)
+        : {};
       const names = sessionMarker[TAB_NAME_SESSION_KEY]
         ? normalizeTabNames(storedNames[TAB_NAMES_STORAGE_KEY])
         : {};
