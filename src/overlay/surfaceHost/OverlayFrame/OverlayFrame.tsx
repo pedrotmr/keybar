@@ -16,6 +16,7 @@ export function OverlayFrame({ controller, renderSurface }: OverlayFrameProps) {
     modifierReleasedAtOpen,
     releaseKey,
     cycleVersion,
+    tabsSnapshot,
   } = useOverlayFrame(controller);
 
   if (!isOpen) {
@@ -29,6 +30,7 @@ export function OverlayFrame({ controller, renderSurface }: OverlayFrameProps) {
         theme,
         themeRoot: controller.host,
         onClose: closeSurface,
+        tabsSnapshot,
         autoSwitchOnRelease,
         openedAt,
         modifierReleasedAtOpen,

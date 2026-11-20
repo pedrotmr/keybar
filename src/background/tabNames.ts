@@ -1,6 +1,12 @@
 import type { RenamedTab } from '@/types';
 import { SerialTaskQueue } from '@/utils/serialTaskQueue';
-import { markTabNameClosed, normalizeTabNames, reconcileTabNames, type TabNameMap } from '@/utils/tabNamePersistence';
+import {
+  markTabNameClosed,
+  normalizeTabNames,
+  reconcileTabNames,
+  TAB_NAMES_STORAGE_KEY,
+  type TabNameMap,
+} from '@/utils/tabNamePersistence';
 import { getHttpOrigin, isScriptableHttpUrl } from '@/utils/pageOrigin';
 import {
   applyPageTitleOverride,
@@ -9,7 +15,7 @@ import {
   type TitleOverrideReason,
 } from '@/utils/pageTitleOverride';
 
-const localKey = 'renamedTabs';
+const localKey = TAB_NAMES_STORAGE_KEY;
 const sessionKey = 'tabNameIdsCurrentSession';
 const operations = new SerialTaskQueue();
 
@@ -44,47 +50,207 @@ const persistReconciledTabNames = async (
   return names;
 };
 
-const reapplyTabStripTitles = async (names: TabNameMap): Promise<boolean> => {
-  let mutated = false;
+let tabsChangedNotifier: (() => void) | null = null;
 
-  await Promise.all(
-    Object.entries(names).map(async ([key, name]) => {
-      if (isStaleKey(key) || !name.showInTabStrip || !name.tabStripOrigin) {
-        return;
-      }
-
-      try {
-        const tab = await chrome.tabs.get(name.tabId);
-        const origin = getHttpOrigin(tab.url);
-
-        if (origin !== name.tabStripOrigin) {
-          return;
-        }
-
-        const applied = await applyPageTitleOverride(name.tabId, name.customName, name.tabStripOrigin);
-
-        if (applied.success && applied.originalTitle !== name.originalTitle) {
-          name.originalTitle = applied.originalTitle;
-          mutated = true;
-        }
-      } catch {
-        // Tab may be gone or injection unavailable.
-      }
-    }),
-  );
-
-  return mutated;
+/** Wire popup + overlay refresh (content scripts do not receive runtime.sendMessage broadcasts). */
+export const setTabNamesChangeNotifier = (notifier: () => void): void => {
+  tabsChangedNotifier = notifier;
 };
 
-const reconcileRenamedTabs = async (): Promise<TabNameMap> =>
-  operations.enqueue(async () => {
-    const [tabs, stored] = await Promise.all([chrome.tabs.query({}), chrome.storage.local.get(localKey)]);
-    const names = await persistReconciledTabNames(tabs, normalizeTabNames(stored[localKey]));
-    if (await reapplyTabStripTitles(names)) {
-      await chrome.storage.local.set({ [localKey]: names });
+const notifyTabsChanged = (): void => {
+  if (tabsChangedNotifier) {
+    tabsChangedNotifier();
+    return;
+  }
+
+  void chrome.runtime.sendMessage({ action: 'ui:tabs-changed' }).catch(() => undefined);
+};
+
+const stripGenerationByTab = new Map<number, number>();
+
+const bumpStripGeneration = (tabId: number): number => {
+  const next = (stripGenerationByTab.get(tabId) ?? 0) + 1;
+  stripGenerationByTab.set(tabId, next);
+  return next;
+};
+
+const currentStripGeneration = (tabId: number): number => stripGenerationByTab.get(tabId) ?? 0;
+
+const isCurrentStripGeneration = (tabId: number, generation: number): boolean =>
+  currentStripGeneration(tabId) === generation;
+
+/**
+ * Re-inject strip titles without occupying the name-mutation queue. Rename/list
+ * must not wait on executeScript across every renamed tab.
+ */
+const scheduleStripTitleReapply = (names: TabNameMap): void => {
+  const targets = Object.values(names).filter(
+    (name) => name.showInTabStrip && name.tabStripOrigin && !isStaleKey(String(name.tabId)),
+  );
+
+  if (!targets.length) {
+    return;
+  }
+
+  void (async () => {
+    const originalTitleUpdates: Array<{ tabId: number; originalTitle: string }> = [];
+
+    await Promise.all(
+      targets.map(async (name) => {
+        try {
+          // Do not bump — user rename/clear owns generation priority over passive reapply.
+          const generation = currentStripGeneration(name.tabId);
+          const tab = await chrome.tabs.get(name.tabId);
+          const origin = getHttpOrigin(tab.url);
+
+          if (origin !== name.tabStripOrigin || !isCurrentStripGeneration(name.tabId, generation)) {
+            return;
+          }
+
+          const applied = await applyPageTitleOverride(name.tabId, name.customName, name.tabStripOrigin!);
+
+          if (
+            applied.success &&
+            applied.originalTitle !== name.originalTitle &&
+            isCurrentStripGeneration(name.tabId, generation)
+          ) {
+            originalTitleUpdates.push({ tabId: name.tabId, originalTitle: applied.originalTitle });
+          }
+        } catch {
+          // Tab may be gone or injection unavailable.
+        }
+      }),
+    );
+
+    if (!originalTitleUpdates.length) {
+      return;
+    }
+
+    await withNamesMutation(async (fresh) => {
+      let changed = false;
+
+      for (const update of originalTitleUpdates) {
+        const entry = fresh[String(update.tabId)];
+
+        if (entry && entry.originalTitle !== update.originalTitle) {
+          entry.originalTitle = update.originalTitle;
+          changed = true;
+        }
+      }
+
+      return changed;
+    }).catch(() => undefined);
+  })().catch(() => undefined);
+};
+
+const applyStripTitleInBackground = (
+  tabId: number,
+  customName: string,
+  origin: string,
+  previous: RenamedTab | undefined,
+  generation: number,
+): void => {
+  void (async () => {
+    if (!isCurrentStripGeneration(tabId, generation)) {
+      return;
+    }
+
+    const applied = await applyPageTitleOverride(tabId, customName, origin);
+
+    if (!isCurrentStripGeneration(tabId, generation)) {
+      return;
+    }
+
+    if (!applied.success) {
+      await withNamesMutation(async (names) => {
+        const saved = names[String(tabId)];
+
+        if (!saved || saved.customName !== customName) {
+          return false;
+        }
+
+        const live = await chrome.tabs.get(tabId).catch(() => null);
+        const liveOrigin = getHttpOrigin(live?.url);
+        const previousStillActive =
+          Boolean(previous?.showInTabStrip) &&
+          Boolean(previous?.tabStripOrigin) &&
+          previous?.tabStripOrigin === liveOrigin;
+
+        if (previousStillActive && previous) {
+          names[String(tabId)] = previous;
+          return true;
+        }
+
+        const liveTitle = live?.title ?? '';
+        names[String(tabId)] = {
+          tabId,
+          customName,
+          originalTitle:
+            previous?.customName && titlesMatch(liveTitle, previous.customName)
+              ? previous.originalTitle
+              : liveTitle || live?.url || saved.originalTitle,
+          url: live?.url ?? saved.url,
+          updatedAt: Date.now(),
+        };
+        return true;
+      }).catch(() => undefined);
+      notifyTabsChanged();
+      return;
+    }
+
+    await withNamesMutation(async (names) => {
+      const saved = names[String(tabId)];
+
+      if (!saved || saved.customName !== customName) {
+        return false;
+      }
+
+      saved.originalTitle = applied.originalTitle;
+      saved.showInTabStrip = true;
+      saved.tabStripOrigin = origin;
+      return true;
+    }).catch(() => undefined);
+
+    notifyTabsChanged();
+  })().catch(() => undefined);
+};
+
+const liveNameFingerprint = (names: TabNameMap): string =>
+  Object.keys(names)
+    .filter((key) => !isStaleKey(key))
+    .sort()
+    .map((key) => {
+      const entry = names[key];
+      return `${key}:${entry.customName}:${entry.updatedAt}:${entry.showInTabStrip ? 1 : 0}`;
+    })
+    .join('|');
+
+let reconcileInFlight: Promise<TabNameMap> | null = null;
+
+const reconcileRenamedTabs = async (): Promise<TabNameMap> => {
+  if (reconcileInFlight) {
+    return reconcileInFlight;
+  }
+
+  reconcileInFlight = (async () => {
+    const beforeStored = await chrome.storage.local.get(localKey);
+    const before = liveNameFingerprint(normalizeTabNames(beforeStored[localKey]));
+    const names = await operations.enqueue(async () => {
+      const [tabs, stored] = await Promise.all([chrome.tabs.query({}), chrome.storage.local.get(localKey)]);
+      return persistReconciledTabNames(tabs, normalizeTabNames(stored[localKey]));
+    });
+    scheduleStripTitleReapply(names);
+    // Avoid a list↔reconcile refresh loop when stale entries remain unchanged.
+    if (liveNameFingerprint(names) !== before) {
+      notifyTabsChanged();
     }
     return names;
+  })().finally(() => {
+    reconcileInFlight = null;
   });
+
+  return reconcileInFlight;
+};
 
 const scheduleReconciliation = (): void => {
   if (!reattachmentPending || reconcileTimer) {
@@ -111,11 +277,7 @@ const initializeSession = async (): Promise<void> => {
     if (reattachmentPending) {
       scheduleReconciliation();
     } else {
-      await operations.enqueue(async () => {
-        if (await reapplyTabStripTitles(names)) {
-          await chrome.storage.local.set({ [localKey]: names });
-        }
-      });
+      scheduleStripTitleReapply(names);
     }
 
     return;
@@ -123,16 +285,22 @@ const initializeSession = async (): Promise<void> => {
 
   await operations.drain();
 
+  let reconciledForReapply: TabNameMap | null = null;
+
   await operations.enqueue(async () => {
     if (Object.keys(names).length) {
-      const reconciled = await persistReconciledTabNames(await chrome.tabs.query({}), names, true);
-      if (await reapplyTabStripTitles(reconciled)) {
-        await chrome.storage.local.set({ [localKey]: reconciled });
-      }
+      reconciledForReapply = await persistReconciledTabNames(await chrome.tabs.query({}), names, true);
     }
   });
 
   await chrome.storage.session.set({ [sessionKey]: true });
+
+  if (reconciledForReapply) {
+    scheduleStripTitleReapply(reconciledForReapply);
+  }
+
+  // Session marker is live — refresh open palettes so ID-gated names can join.
+  notifyTabsChanged();
 
   if (reattachmentPending) {
     scheduleReconciliation();
@@ -185,10 +353,12 @@ const restoreStripOverride = async (tabId: number, previous?: RenamedTab): Promi
 
 export const renameTab = async (tabId: number, name: string): Promise<RenameTabResult> => {
   const customName = normalizeCustomTabTitle(name).slice(0, 120);
+  const generation = bumpStripGeneration(tabId);
 
-  return withNamesMutation(async (names, deferRollback) => {
-    // Read the live tab inside the queue so a navigation while waiting does not
-    // keep a stale URL/origin for Keybar-only fallback or strip retention.
+  // Strip injection runs only after the storage read, with deferRollback registered
+  // immediately on success — so a failed write cannot leave an unowned strip title,
+  // and a rollback cannot clear a newer rename's override (customName-matched restore).
+  const result = await withNamesMutation(async (names, deferRollback) => {
     const tab = await chrome.tabs.get(tabId);
     const origin = getHttpOrigin(tab.url);
     const wantStrip = Boolean(customName) && Boolean(origin) && isScriptableHttpUrl(tab.url);
@@ -197,7 +367,7 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
     if (!customName) {
       if (!previous?.showInTabStrip || !previous.tabStripOrigin) {
         delete names[String(tabId)];
-        return { record: null, stripStatus: 'unchanged' };
+        return { record: null, stripStatus: 'unchanged' as const };
       }
 
       const restored = await restorePageTitleOverride(
@@ -207,17 +377,24 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
         previous.tabStripOrigin,
       );
 
+      if (!isCurrentStripGeneration(tabId, generation)) {
+        return { record: previous, stripStatus: 'unchanged' as const };
+      }
+
       if (!restored.success) {
-        // Page already shows the real title, or the tab left the strip origin.
         if (restored.reason === 'title-not-overridden' || restored.reason === 'origin-mismatch') {
           delete names[String(tabId)];
-          return { record: null, stripStatus: 'restored' };
+          if (restored.reason === 'title-not-overridden') {
+            deferRollback(async () => {
+              await applyPageTitleOverride(tabId, previous.customName, previous.tabStripOrigin!).catch(() => undefined);
+            });
+          }
+          return { record: null, stripStatus: 'restored' as const };
         }
 
-        // Keep the record so the user can retry when injection fails.
         return {
           record: previous,
-          stripStatus: restored.reason === 'site-access-required' ? 'denied' : 'unavailable',
+          stripStatus: restored.reason === 'site-access-required' ? ('denied' as const) : ('unavailable' as const),
           stripReason: restored.reason,
         };
       }
@@ -226,7 +403,7 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
       deferRollback(async () => {
         await applyPageTitleOverride(tabId, previous.customName, previous.tabStripOrigin!).catch(() => undefined);
       });
-      return { record: null, stripStatus: 'restored' };
+      return { record: null, stripStatus: 'restored' as const };
     }
 
     const pageTitle =
@@ -247,18 +424,25 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
     if (!wantStrip) {
       await restoreStripOverride(tabId, previous);
       names[String(tabId)] = saved;
-      return { record: saved, stripStatus: 'unavailable', stripReason: 'unsupported-page' };
+      return { record: saved, stripStatus: 'unavailable' as const, stripReason: 'unsupported-page' as const };
     }
 
-    const applied = await applyPageTitleOverride(tabId, customName, origin!);
+    if (!isCurrentStripGeneration(tabId, generation)) {
+      return { record: previous ?? null, stripStatus: 'unchanged' as const };
+    }
 
-    if (!applied.success) {
-      // Injection may see a newer origin than the snapshot above — re-read.
+    const applied = await applyPageTitleOverride(tabId, customName, origin!).catch(() => null);
+
+    if (!isCurrentStripGeneration(tabId, generation)) {
+      if (applied?.success) {
+        await restorePageTitleOverride(tabId, applied.originalTitle, customName, origin!).catch(() => undefined);
+      }
+      return { record: previous ?? null, stripStatus: 'unchanged' as const };
+    }
+
+    if (!applied?.success) {
       const live = await chrome.tabs.get(tabId).catch(() => null);
       const liveOrigin = getHttpOrigin(live?.url);
-
-      // If navigation returned to the strip origin during injection, the previous
-      // override may still be active — keep that record instead of Keybar-only.
       const previousStillActive =
         Boolean(previous?.showInTabStrip) &&
         Boolean(previous?.tabStripOrigin) &&
@@ -267,8 +451,8 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
       if (previousStillActive && previous) {
         return {
           record: previous,
-          stripStatus: applied.reason === 'site-access-required' ? 'denied' : 'unavailable',
-          stripReason: applied.reason,
+          stripStatus: applied?.reason === 'site-access-required' ? ('denied' as const) : ('unavailable' as const),
+          stripReason: applied?.reason,
         };
       }
 
@@ -276,7 +460,6 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
       const keybarOnly: RenamedTab = {
         tabId,
         customName,
-        // Avoid storing a still-visible custom strip title as the page's original title.
         originalTitle:
           previous?.customName && titlesMatch(liveTitle, previous.customName)
             ? previous.originalTitle
@@ -288,15 +471,11 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
       names[String(tabId)] = keybarOnly;
       return {
         record: keybarOnly,
-        stripStatus: applied.reason === 'site-access-required' ? 'denied' : 'unavailable',
-        stripReason: applied.reason,
+        stripStatus: applied?.reason === 'site-access-required' ? ('denied' as const) : ('unavailable' as const),
+        stripReason: applied?.reason,
       };
     }
 
-    saved.originalTitle = applied.originalTitle;
-    saved.showInTabStrip = true;
-    saved.tabStripOrigin = origin!;
-    names[String(tabId)] = saved;
     deferRollback(async () => {
       if (previous?.showInTabStrip && previous.tabStripOrigin === origin) {
         await applyPageTitleOverride(tabId, previous.customName, previous.tabStripOrigin).catch(() => undefined);
@@ -305,8 +484,16 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
 
       await restorePageTitleOverride(tabId, applied.originalTitle, customName, origin!).catch(() => undefined);
     });
-    return { record: saved, stripStatus: 'applied' };
+
+    saved.originalTitle = applied.originalTitle;
+    saved.showInTabStrip = true;
+    saved.tabStripOrigin = origin!;
+    names[String(tabId)] = saved;
+    return { record: saved, stripStatus: 'applied' as const };
   });
+
+  notifyTabsChanged();
+  return result;
 };
 
 const inheritTabNameInto = async (
@@ -376,10 +563,41 @@ export const duplicateTabWithName = async (sourceTabId: number): Promise<void> =
   });
 };
 
+export const TAB_NAME_SESSION_KEY = sessionKey;
+
+/** True once this browser session has finished (or skipped) identity reconciliation. */
+export const isTabNameSessionReady = async (): Promise<boolean> => {
+  if (!sessionSafe) {
+    return false;
+  }
+
+  const session = await chrome.storage.session.get(sessionKey);
+  return Boolean(session[sessionKey]);
+};
+
 export const getTabNames = async (): Promise<TabNameMap> => {
+  if (!sessionSafe) {
+    return {};
+  }
+
+  // Read the session marker before names so a freshly set marker cannot pair with a
+  // stale parallel names read from before reconciliation finished.
+  const session = await chrome.storage.session.get(sessionKey);
+
+  if (!session[sessionKey]) {
+    void tabNameSessionInitialization;
+    return {};
+  }
+
   const stored = await chrome.storage.local.get(localKey);
-  const names = sessionSafe ? normalizeTabNames(stored[localKey]) : {};
-  return Object.keys(names).some(isStaleKey) ? reconcileRenamedTabs() : names;
+  const names = normalizeTabNames(stored[localKey]);
+
+  // Reattach off the list path so Command Bar open is not blocked on reconciliation.
+  if (Object.keys(names).some(isStaleKey)) {
+    void reconcileRenamedTabs().catch(() => undefined);
+  }
+
+  return names;
 };
 
 export const handleClosedTabName = async (tabId: number): Promise<void> => {
@@ -457,8 +675,15 @@ export const handleUpdatedTabName = async (
     saved.closedAt = undefined;
     saved.updatedAt = Date.now();
 
-    if (saved.showInTabStrip && saved.tabStripOrigin && changeInfo.status === 'complete') {
-      shouldReapply = getHttpOrigin(live.url) === saved.tabStripOrigin;
+    if (saved.showInTabStrip && saved.tabStripOrigin) {
+      const origin = getHttpOrigin(live.url);
+
+      if (origin === saved.tabStripOrigin) {
+        // Reload/navigation clears in-page overrides; also catch late title writes.
+        shouldReapply =
+          changeInfo.status === 'complete' ||
+          (typeof changeInfo.title === 'string' && !titlesMatch(changeInfo.title, saved.customName));
+      }
     }
 
     return true;
@@ -469,22 +694,13 @@ export const handleUpdatedTabName = async (
   }
 
   if (shouldReapply) {
-    await operations.enqueue(async () => {
-      const stored = await chrome.storage.local.get(localKey);
-      const names = normalizeTabNames(stored[localKey]);
-      const saved = names[String(tabId)];
+    const stored = await chrome.storage.local.get(localKey);
+    const saved = normalizeTabNames(stored[localKey])[String(tabId)];
 
-      if (!saved?.showInTabStrip || !saved.tabStripOrigin) {
-        return;
-      }
-
-      const applied = await applyPageTitleOverride(tabId, saved.customName, saved.tabStripOrigin).catch(() => null);
-
-      if (applied?.success && applied.originalTitle !== saved.originalTitle) {
-        saved.originalTitle = applied.originalTitle;
-        await chrome.storage.local.set({ [localKey]: names });
-      }
-    });
+    if (saved?.showInTabStrip && saved.tabStripOrigin) {
+      const generation = currentStripGeneration(tabId);
+      applyStripTitleInBackground(tabId, saved.customName, saved.tabStripOrigin, saved, generation);
+    }
   }
 };
 

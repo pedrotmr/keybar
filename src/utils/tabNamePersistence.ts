@@ -1,6 +1,8 @@
 import type { RenamedTab } from '@/types';
 import { getHttpOrigin } from '@/utils/pageOrigin';
 
+export const TAB_NAMES_STORAGE_KEY = 'renamedTabs';
+
 export type TabNameMap = Record<string, RenamedTab>;
 export type TabIdentitySnapshot = Pick<chrome.tabs.Tab, 'id' | 'url' | 'title'>;
 

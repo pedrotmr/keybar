@@ -49,7 +49,14 @@ interface TabStateMessages {
 }
 
 interface TabLookupMessages {
-  'tabs:list': { request: EmptyPayload; response: ManagedBrowserTab[] };
+  'tabs:list': {
+    request: EmptyPayload;
+    response: {
+      tabs: ManagedBrowserTab[];
+      currentTabId: number | null;
+      currentWindowId: number | null;
+    };
+  };
   'tabs:recent': { request: EmptyPayload; response: ManagedBrowserTab[] };
   'tabs:current': { request: EmptyPayload; response: (chrome.tabs.Tab & { splitViewId?: number }) | null };
   'tabs:activate': { request: { tabId: number; sourceTabId?: number | null }; response: boolean };
