@@ -299,7 +299,7 @@ export const searchItems = (
   const history = rankItems(
     filteredItems.filter((item) => item.type === 'history'),
     localQuery,
-    Math.max(0, 100 - nonHistory.length - 1),
+    99 - nonHistory.length,
   );
   return [...nonHistory, searchItem, ...history];
 };
