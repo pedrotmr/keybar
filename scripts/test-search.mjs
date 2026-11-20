@@ -729,15 +729,15 @@ test('search ranking and navigation behavior', async () => {
     const mixedResults = searchItems(mixedLocalItems, 'project').map((item) => item.id);
     const googleIndex = mixedResults.indexOf('search-google');
     assert.ok(googleIndex >= 0, 'Google fallback remains available beside local matches');
-    assert.ok(mixedResults.indexOf('tab-project') < googleIndex, 'matching tabs stay above the Google fallback');
-    assert.ok(
-      mixedResults.indexOf('bookmark-project') < googleIndex,
-      'matching bookmarks stay above the Google fallback',
-    );
-    assert.ok(
-      googleIndex < mixedResults.indexOf('history-project'),
-      'matching history stays below the Google fallback',
-    );
+    const tabIndex = mixedResults.indexOf('tab-project');
+    const bookmarkIndex = mixedResults.indexOf('bookmark-project');
+    const historyIndex = mixedResults.indexOf('history-project');
+    assert.ok(tabIndex >= 0, 'matching tab remains in the ranked results');
+    assert.ok(bookmarkIndex >= 0, 'matching bookmark remains in the ranked results');
+    assert.ok(historyIndex >= 0, 'matching history remains in the ranked results');
+    assert.ok(tabIndex < googleIndex, 'matching tabs stay above the Google fallback');
+    assert.ok(bookmarkIndex < googleIndex, 'matching bookmarks stay above the Google fallback');
+    assert.ok(googleIndex < historyIndex, 'matching history stays below the Google fallback');
     const historyFlood = Array.from({ length: 120 }, (_, index) => ({
       id: `history-flood-${index}`,
       type: 'history',
