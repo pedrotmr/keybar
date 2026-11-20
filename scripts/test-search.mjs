@@ -687,16 +687,87 @@ test('search ranking and navigation behavior', async () => {
       },
     ];
     const historyResults = searchItems(historyItems, 'project');
-    assert.deepEqual(
-      historyResults.slice(0, 2).map((item) => item.id),
-      ['history-new', 'history-old'],
-      'equally relevant history results preserve visit recency',
-    );
     assert.equal(
-      historyResults.at(-1).type,
-      'search',
-      'an external web-search option remains available beneath local matches',
+      historyResults[0]?.id,
+      'search-google',
+      'the unmatched-query Google fallback ranks above history matches',
     );
+    assert.deepEqual(
+      historyResults.slice(1, 3).map((item) => item.id),
+      ['history-new', 'history-old'],
+      'equally relevant history results preserve visit recency beneath Google',
+    );
+    const mixedLocalItems = [
+      {
+        id: 'tab-project',
+        type: 'tab',
+        title: 'Project board',
+        subtitle: 'Open tab',
+        icon: '◻',
+        url: 'https://example.com/board',
+        tabId: 1,
+        windowId: 1,
+      },
+      {
+        id: 'bookmark-project',
+        type: 'bookmark',
+        title: 'Project wiki',
+        subtitle: 'Bookmark',
+        icon: '☆',
+        url: 'https://example.com/wiki',
+      },
+      {
+        id: 'history-project',
+        type: 'history',
+        title: 'Project archive',
+        subtitle: 'History result',
+        icon: '◷',
+        url: 'https://example.com/archive',
+        lastVisitTime: 100,
+      },
+    ];
+    const mixedResults = searchItems(mixedLocalItems, 'project').map((item) => item.id);
+    const googleIndex = mixedResults.indexOf('search-google');
+    assert.ok(googleIndex >= 0, 'Google fallback remains available beside local matches');
+    const tabIndex = mixedResults.indexOf('tab-project');
+    const bookmarkIndex = mixedResults.indexOf('bookmark-project');
+    const historyIndex = mixedResults.indexOf('history-project');
+    assert.ok(tabIndex >= 0, 'matching tab remains in the ranked results');
+    assert.ok(bookmarkIndex >= 0, 'matching bookmark remains in the ranked results');
+    assert.ok(historyIndex >= 0, 'matching history remains in the ranked results');
+    assert.ok(tabIndex < googleIndex, 'matching tabs stay above the Google fallback');
+    assert.ok(bookmarkIndex < googleIndex, 'matching bookmarks stay above the Google fallback');
+    assert.ok(googleIndex < historyIndex, 'matching history stays below the Google fallback');
+    const historyFlood = Array.from({ length: 120 }, (_, index) => ({
+      id: `history-flood-${index}`,
+      type: 'history',
+      title: `Project notes ${index}`,
+      subtitle: 'History result',
+      icon: '◷',
+      url: `https://example.com/flood/${index}`,
+      lastVisitTime: 1000 - index,
+    }));
+    const floodedResults = searchItems(
+      [
+        {
+          id: 'bookmark-project-notes',
+          type: 'bookmark',
+          title: 'Archive of project notes',
+          subtitle: 'Bookmark',
+          icon: '☆',
+          url: 'https://example.com/notes',
+        },
+        ...historyFlood,
+      ],
+      'project notes',
+    ).map((item) => item.id);
+    assert.deepEqual(
+      floodedResults.slice(0, 2),
+      ['bookmark-project-notes', 'search-google'],
+      'a weaker bookmark still leads Google when history would flood a shared cap',
+    );
+    assert.equal(floodedResults.length, 100, 'the ranked list still fills the result cap');
+    assert.ok(floodedResults.includes('history-flood-0'), 'history still fills remaining slots beneath Google');
     assert.equal(
       findSearchProvider('YouTube')?.id,
       'youtube',

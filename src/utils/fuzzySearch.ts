@@ -256,26 +256,26 @@ export const searchItems = (
     tabsOnly && items.some((item) => item.type !== 'tab') ? items.filter((item) => item.type === 'tab') : items;
 
   const localQuery = providerQuery?.query ?? normalized;
-  const matchLimit = providerQuery || (!tabsOnly && allowFallback) ? 99 : 100;
-  const matches = rankItems(filteredItems, localQuery, matchLimit);
 
   if (providerQuery) {
+    const matches = rankItems(filteredItems, localQuery, 99);
     const providerItem = createProviderSearchItem(providerQuery.provider, providerQuery.query);
     return [providerItem, ...matches];
   }
 
   if (tabsOnly) {
-    return matches;
+    return rankItems(filteredItems, localQuery, 100);
   }
 
   const navigationUrl = normalizeNavigationUrl(normalized);
 
   if (navigationUrl) {
+    const matches = rankItems(filteredItems, localQuery, allowFallback ? 99 : 100);
     return [createNavigationItem(navigationUrl), ...matches].slice(0, 100);
   }
 
   if (!allowFallback) {
-    return matches;
+    return rankItems(filteredItems, localQuery, 100);
   }
 
   const fallbackProvider = searchProviders[0];
@@ -289,7 +289,19 @@ export const searchItems = (
     url: fallbackProvider.urlTemplate.replace('%s', encodeURIComponent(normalized)),
   };
 
-  return [...matches, searchItem].slice(0, 100);
+  // Rank non-history first so a history flood cannot consume the cap and hide
+  // tabs/bookmarks/commands beneath the Google fallback.
+  const nonHistory = rankItems(
+    filteredItems.filter((item) => item.type !== 'history'),
+    localQuery,
+    99,
+  );
+  const history = rankItems(
+    filteredItems.filter((item) => item.type === 'history'),
+    localQuery,
+    99 - nonHistory.length,
+  );
+  return [...nonHistory, searchItem, ...history];
 };
 
 export const searchProviderItems = (
