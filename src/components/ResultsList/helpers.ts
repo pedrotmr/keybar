@@ -40,7 +40,7 @@ export const displayDetails = (item: PaletteItem): string => {
   return normalize(formatted) === normalize(item.title) ? '' : formatted;
 };
 
-// Rows with an actions button need an explicit name; otherwise the button label joins the option name.
+// Keep the tab option's full details available to assistive technology; its Actions button is a sibling.
 export const optionLabel = (item: PaletteItem, details: string, badge: string): string => {
   const states = item.type === 'tab' ? [item.audible ? 'Playing audio' : ''] : [];
 

@@ -75,13 +75,12 @@ export function ResultsRegion({
         loadingState={loadingState}
         emptyState={emptyState}
         isInitialList={isInitialList}
+        actionsMenuId={actionsMenuId}
+        openActionsIndex={actionDock ? actionDockIndex : undefined}
         onItemClick={onItemClick}
         onItemHover={onItemHover}
         onItemContextMenu={onItemContextMenu}
-        hasItemActions={(item) => item.type === 'tab'}
         onItemActions={onItemActions}
-        openActionsIndex={actionDock ? actionDockIndex : undefined}
-        actionsMenuId={actionsMenuId}
       />
       {actionDock && actionDockTab && actionDockIndex >= 0 && (
         <ActionDock

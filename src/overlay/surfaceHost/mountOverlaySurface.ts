@@ -28,6 +28,7 @@ export const mountOverlaySurface = (surface: OverlaySurface, styles: string, ren
     pendingOpen: false,
     pendingAutoSwitchOnRelease: false,
     pendingOpenedAt: 0,
+    pendingReleaseKey: null,
     pendingClose: false,
     pendingSwitching: false,
     pendingCycles: 0,

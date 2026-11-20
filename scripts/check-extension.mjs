@@ -3,6 +3,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { collectProviderIconInventory } from './provider-icon-assets.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 try {
@@ -11,12 +12,30 @@ try {
   const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
   const artifacts = JSON.parse(await readFile(path.join(root, 'extension-artifacts.json'), 'utf8'));
   const built = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
+  const builtProviderIconInventory = JSON.parse(
+    await readFile(path.join(directory, artifacts.providerIcons.inventoryFile), 'utf8'),
+  );
+  const providerIconInventory = collectProviderIconInventory({
+    sourceDirectory: path.join(root, artifacts.providerIcons.sourceDirectory),
+    emittedDirectory: path.join(directory, artifacts.providerIcons.directory),
+    resourceDirectory: artifacts.providerIcons.directory,
+    sourceFiles: artifacts.providerIcons.sourceFiles,
+    emittedFilesBySource: new Map(builtProviderIconInventory.map(({ source, file }) => [source, file])),
+  });
+  assert.deepEqual(
+    builtProviderIconInventory,
+    providerIconInventory,
+    'Built provider icon inventory differs from emitted SVGs; run npm run build',
+  );
   const expectedManifest = {
     ...source,
     version: pkg.version,
     web_accessible_resources: [
       {
-        resources: Object.values(artifacts.fonts.families).flatMap((family) => family.faces.map((face) => face.path)),
+        resources: [
+          ...Object.values(artifacts.fonts.families).flatMap((family) => family.faces.map((face) => face.path)),
+          artifacts.providerIcons.webAccessibleResource,
+        ],
         matches: artifacts.fonts.matches,
       },
     ],

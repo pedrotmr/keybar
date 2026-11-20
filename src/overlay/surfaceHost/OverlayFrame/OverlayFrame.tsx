@@ -7,8 +7,16 @@ interface OverlayFrameProps {
 }
 
 export function OverlayFrame({ controller, renderSurface }: OverlayFrameProps) {
-  const { isOpen, theme, closeSurface, autoSwitchOnRelease, openedAt, modifierReleasedAtOpen, cycleVersion } =
-    useOverlayFrame(controller);
+  const {
+    isOpen,
+    theme,
+    closeSurface,
+    autoSwitchOnRelease,
+    openedAt,
+    modifierReleasedAtOpen,
+    releaseKey,
+    cycleVersion,
+  } = useOverlayFrame(controller);
 
   if (!isOpen) {
     return null;
@@ -24,6 +32,7 @@ export function OverlayFrame({ controller, renderSurface }: OverlayFrameProps) {
         autoSwitchOnRelease,
         openedAt,
         modifierReleasedAtOpen,
+        releaseKey,
         cycleVersion,
       })}
     </div>

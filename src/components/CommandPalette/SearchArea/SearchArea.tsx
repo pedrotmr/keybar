@@ -10,6 +10,7 @@ interface SearchAreaSearchProps {
   providerCandidates: SearchProviderDefinition[];
   query: string;
   selectedItem?: PaletteItem;
+  scopeAnnouncement: string;
 }
 
 interface SearchAreaViewStateProps {
@@ -35,6 +36,7 @@ export function SearchArea({
   query,
   inputRef,
   selectedItem,
+  scopeAnnouncement,
   hasSelectedTab,
   showResults,
   resultsLength,
@@ -98,7 +100,8 @@ export function SearchArea({
         spellCheck={false}
       />
       <span id="tab-actions-hint" className="visually-hidden">
-        F2 renames the selected tab. Shift F10, the Context Menu key, or Command/Control K opens tab actions.
+        Each tab row has an Actions button. F2 renames the selected tab. Shift F10, the Context Menu key, or
+        Command/Control K also opens tab actions.
       </span>
       <span
         id="provider-suggestion-status"
@@ -112,6 +115,9 @@ export function SearchArea({
           : providerCandidates.length === 1
             ? `${providerCandidates[0].verb} ${providerCandidates[0].name}. Press Tab to select.`
             : ''}
+      </span>
+      <span id="search-scope-status" className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {scopeAnnouncement}
       </span>
       <div className="mode-nav" role="group" aria-label="Command Bar controls">
         {providerCandidates.length === 1 && (

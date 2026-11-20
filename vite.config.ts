@@ -14,6 +14,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    manifest: artifacts.providerIcons.buildManifests.main,
     rollupOptions: {
       input: {
         popup: path.resolve(__dirname, artifacts.popupHtml),
@@ -23,7 +24,10 @@ export default defineConfig({
         entryFileNames: (chunk) =>
           chunk.name === 'background' ? manifest.background.service_worker : 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]',
+        assetFileNames: (asset) =>
+          asset.name?.endsWith('.svg')
+            ? 'assets/provider-icons/[name]-[hash][extname]'
+            : 'assets/[name]-[hash][extname]',
       },
     },
   },

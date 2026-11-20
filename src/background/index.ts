@@ -9,7 +9,11 @@ import { isOverlayPage } from '@/utils/pageSupport';
 import { OverlayTabRegistry } from '@/utils/overlayTabRegistry';
 import { TabPreviewCache, type TabPreviewRecord } from '@/utils/tabPreviewCache';
 import { writePopupLaunchIntent } from '@/utils/popupLaunchIntent';
-import { installTabSwitcherKeyReleaseMonitorInPage } from '@/utils/tabSwitcherKeyRelease';
+import {
+  getTabSwitcherReleaseKeyFromShortcut,
+  installTabSwitcherKeyReleaseMonitorInPage,
+  type TabSwitcherReleaseKey,
+} from '@/utils/tabSwitcherKeyRelease';
 import artifacts from '../../extension-artifacts.json';
 import {
   getTabCustomName,
@@ -114,8 +118,9 @@ const openPopup = async (
   mode: 'commands' | 'tabs',
   autoSwitchOnRelease = false,
   openedAt = Date.now(),
+  releaseKey: TabSwitcherReleaseKey | null = null,
 ): Promise<void> => {
-  await writePopupLaunchIntent({ mode, autoSwitchOnRelease, openedAt });
+  await writePopupLaunchIntent({ mode, autoSwitchOnRelease, openedAt, releaseKey });
   await chrome.action.setPopup({ tabId, popup: popupPath });
 
   try {
@@ -131,6 +136,7 @@ const openOverlay = async (
   mode: 'commands' | 'tabs',
   autoSwitchOnRelease = false,
   openedAt = Date.now(),
+  releaseKey: TabSwitcherReleaseKey | null = null,
 ): Promise<void> => {
   if (mode === 'tabs') {
     const tab = await chrome.tabs.get(tabId);
@@ -142,7 +148,7 @@ const openOverlay = async (
   }
 
   await chrome.action.setPopup({ tabId, popup: '' });
-  const request = { action: 'overlay:open', mode, autoSwitchOnRelease, openedAt };
+  const request = { action: 'overlay:open', mode, autoSwitchOnRelease, openedAt, releaseKey };
 
   try {
     const response = (await chrome.tabs.sendMessage(tabId, request)) as { success?: boolean } | undefined;
@@ -275,6 +281,16 @@ const installTabSwitcherReleaseMonitor = (tabId: number): Promise<void> => {
     .catch(() => undefined);
 };
 
+const getConfiguredTabSwitcherReleaseKey = async (): Promise<TabSwitcherReleaseKey | null> => {
+  try {
+    const commands = await chrome.commands.getAll();
+    const shortcut = commands.find((command) => command.name === 'open-tab-switcher')?.shortcut;
+    return getTabSwitcherReleaseKeyFromShortcut(shortcut);
+  } catch {
+    return null;
+  }
+};
+
 const openCommandCenter = async (
   mode: 'commands' | 'tabs',
   requestedTabId?: number,
@@ -284,6 +300,7 @@ const openCommandCenter = async (
   const openedAt = Date.now();
   let openingWindowId: number | undefined;
   let openingLaunch: { tabId: number; pendingCycles: number; startedAt: number } | undefined;
+  let releaseKey: TabSwitcherReleaseKey | null = null;
 
   try {
     const tab =
@@ -303,6 +320,7 @@ const openCommandCenter = async (
     // This closes the cold-start gap when a user taps the shortcut quickly.
     if (mode === 'tabs' && fromShortcut) {
       await installTabSwitcherReleaseMonitor(tab.id);
+      releaseKey = await getConfiguredTabSwitcherReleaseKey();
     }
 
     const windowId = tab.windowId;
@@ -373,14 +391,14 @@ const openCommandCenter = async (
 
     if (isOverlayPage(tab.url)) {
       try {
-        await openOverlay(tab.id, mode, fromShortcut && mode === 'tabs', openedAt);
+        await openOverlay(tab.id, mode, fromShortcut && mode === 'tabs', openedAt, releaseKey);
         return;
       } catch {
         // Restricted or browser-managed pages use the extension popup.
       }
     }
 
-    await openPopup(tab.id, mode, fromShortcut && mode === 'tabs', openedAt);
+    await openPopup(tab.id, mode, fromShortcut && mode === 'tabs', openedAt, releaseKey);
   } catch (error) {
     if (
       mode === 'tabs' &&

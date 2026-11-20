@@ -20,6 +20,7 @@ export function contentConfig(surface: 'commands' | 'tabs') {
     build: {
       outDir: 'dist',
       emptyOutDir: false,
+      manifest: artifacts.providerIcons.buildManifests[surface],
       cssCodeSplit: false,
       lib: {
         entry: path.resolve(__dirname, entry),
@@ -30,6 +31,10 @@ export function contentConfig(surface: 'commands' | 'tabs') {
       rollupOptions: {
         output: {
           inlineDynamicImports: true,
+          assetFileNames: (asset) =>
+            asset.name?.endsWith('.svg')
+              ? 'assets/provider-icons/[name]-[hash][extname]'
+              : 'assets/[name]-[hash][extname]',
         },
       },
     },

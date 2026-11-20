@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { sendBackground } from '@/utils/chromeHelpers';
 import type { ManagedTab } from '@/utils/tabItems';
-import { isTabSwitcherModifierKey, wasTabSwitcherModifierReleasedAfter } from '@/utils/tabSwitcherKeyRelease';
+import { wasTabSwitcherModifierReleasedAfter } from '@/utils/tabSwitcherKeyRelease';
 import { optionId } from './helpers';
 import type { TabSwitcherProps } from './types';
 
@@ -18,6 +18,7 @@ export const useTabSwitcherModel = ({
   autoSwitchOnRelease = false,
   openedAt = 0,
   modifierReleasedAtOpen = false,
+  releaseKey = null,
   surface = 'popup',
   cycleVersion = 0,
 }: TabSwitcherProps) => {
@@ -189,6 +190,42 @@ export const useTabSwitcherModel = ({
   }, [selectedTab]);
 
   useLayoutEffect(() => {
+    const panel = listboxRef.current;
+    const selectedCard = panel?.querySelector<HTMLElement>('[aria-selected="true"]');
+
+    if (!panel || !selectedCard) {
+      return;
+    }
+
+    const keepSelectedCardVisible = () => {
+      // offsetLeft/offsetWidth stay in layout coordinates while the opening
+      // animation applies a transform to the panel and its ancestors.
+      const cardLeft = selectedCard.offsetLeft;
+      const cardRight = cardLeft + selectedCard.offsetWidth;
+      const viewportLeft = panel.scrollLeft;
+      const viewportRight = viewportLeft + panel.clientWidth;
+
+      if (cardLeft < viewportLeft) {
+        panel.scrollLeft = cardLeft;
+      } else if (cardRight > viewportRight) {
+        panel.scrollLeft = cardRight - panel.clientWidth;
+      }
+    };
+
+    keepSelectedCardVisible();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(keepSelectedCardVisible);
+    resizeObserver.observe(panel);
+    resizeObserver.observe(selectedCard);
+
+    return () => resizeObserver.disconnect();
+  }, [selectedIndex, tabs]);
+
+  useLayoutEffect(() => {
     cycleVersionRef.current = cycleVersion;
   }, [cycleVersion]);
 
@@ -205,12 +242,12 @@ export const useTabSwitcherModel = ({
       return;
     }
 
-    if (modifierReleasedAtOpen || wasTabSwitcherModifierReleasedAfter(openedAt)) {
+    if (modifierReleasedAtOpen || wasTabSwitcherModifierReleasedAfter(openedAt, releaseKey)) {
       modifierReleasedRef.current = true;
     }
 
     const onKeyUp = (event: globalThis.KeyboardEvent) => {
-      if (!event.isTrusted || !isTabSwitcherModifierKey(event.key)) {
+      if (!event.isTrusted || !releaseKey || event.key !== releaseKey) {
         return;
       }
 
@@ -221,7 +258,7 @@ export const useTabSwitcherModel = ({
 
     window.addEventListener('keyup', onKeyUp, true);
     return () => window.removeEventListener('keyup', onKeyUp, true);
-  }, [autoSwitchOnRelease, openedAt, modifierReleasedAtOpen]);
+  }, [autoSwitchOnRelease, openedAt, modifierReleasedAtOpen, releaseKey]);
 
   useEffect(() => {
     let mounted = true;

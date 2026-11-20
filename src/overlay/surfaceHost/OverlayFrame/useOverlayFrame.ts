@@ -3,6 +3,7 @@ import { applyTheme, defaultThemePreferences, normalizeThemePreferences, themePr
 import type { ThemePreferences } from '@/types';
 import { loadProductFontForPage } from '@/utils/installProductFont';
 import { wasTabSwitcherModifierReleasedAfter } from '@/utils/tabSwitcherKeyRelease';
+import type { TabSwitcherReleaseKey } from '@/utils/tabSwitcherKeyRelease';
 import { hideHost, setPageInert, showHost } from '../host';
 import type { SurfaceController } from '../types';
 
@@ -13,6 +14,7 @@ interface OverlayFrameState {
   autoSwitchOnRelease: boolean;
   openedAt: number;
   modifierReleasedAtOpen: boolean;
+  releaseKey: TabSwitcherReleaseKey | null;
   cycleVersion: number;
 }
 
@@ -24,6 +26,7 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
   const [autoSwitchOnRelease, setAutoSwitchOnRelease] = useState(false);
   const [openedAt, setOpenedAt] = useState(0);
   const [modifierReleasedAtOpen, setModifierReleasedAtOpen] = useState(false);
+  const [releaseKey, setReleaseKey] = useState<TabSwitcherReleaseKey | null>(null);
   const [cycleVersion, setCycleVersion] = useState(0);
 
   const isOpenRef = useRef(false);
@@ -67,7 +70,11 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
   }, [theme, systemDark, controller.host, isOpen]);
 
   useEffect(() => {
-    const openSurface = (shouldAutoSwitchOnRelease: boolean, requestOpenedAt: number) => {
+    const openSurface = (
+      shouldAutoSwitchOnRelease: boolean,
+      requestOpenedAt: number,
+      requestReleaseKey: TabSwitcherReleaseKey | null,
+    ) => {
       if (isOpenRef.current) {
         if (controller.surface === 'tabs') {
           setCycleVersion((version) => version + 1);
@@ -81,7 +88,10 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
       const launchTime = Number.isFinite(requestOpenedAt) && requestOpenedAt > 0 ? requestOpenedAt : Date.now();
       setAutoSwitchOnRelease(shouldAutoSwitchOnRelease);
       setOpenedAt(launchTime);
-      setModifierReleasedAtOpen(shouldAutoSwitchOnRelease && wasTabSwitcherModifierReleasedAfter(launchTime));
+      setReleaseKey(requestReleaseKey);
+      setModifierReleasedAtOpen(
+        shouldAutoSwitchOnRelease && wasTabSwitcherModifierReleasedAfter(launchTime, requestReleaseKey),
+      );
 
       if (
         !controller.focusTarget ||
@@ -159,9 +169,14 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
 
     if (controller.bridge.pendingOpen) {
       controller.bridge.pendingOpen = false;
-      openSurface(controller.bridge.pendingAutoSwitchOnRelease, controller.bridge.pendingOpenedAt);
+      openSurface(
+        controller.bridge.pendingAutoSwitchOnRelease,
+        controller.bridge.pendingOpenedAt,
+        controller.bridge.pendingReleaseKey,
+      );
       controller.bridge.pendingAutoSwitchOnRelease = false;
       controller.bridge.pendingOpenedAt = 0;
+      controller.bridge.pendingReleaseKey = null;
     }
 
     if (controller.bridge.pendingCycles) {
@@ -184,5 +199,14 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
     };
   }, [controller]);
 
-  return { isOpen, theme, closeSurface, autoSwitchOnRelease, openedAt, modifierReleasedAtOpen, cycleVersion };
+  return {
+    isOpen,
+    theme,
+    closeSurface,
+    autoSwitchOnRelease,
+    openedAt,
+    modifierReleasedAtOpen,
+    releaseKey,
+    cycleVersion,
+  };
 };

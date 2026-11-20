@@ -37,12 +37,9 @@ interface ResultsListInteractionProps {
   onItemClick: (index: number) => void;
   onItemHover: (index: number) => void;
   onItemContextMenu?: (index: number) => boolean;
-  /** Rows that pass this check get a "more actions" button. */
-  hasItemActions?: (item: PaletteItem) => boolean;
-  onItemActions?: (index: number, fromKeyboard: boolean) => void;
-  /** Index of the row whose actions menu is open. */
+  onItemActions: (index: number, fromKeyboard: boolean) => void;
+  actionsMenuId: string;
   openActionsIndex?: number;
-  actionsMenuId?: string;
 }
 
 export type ResultsListProps = ResultsListDataProps & ResultsListStatusProps & ResultsListInteractionProps;
@@ -51,17 +48,15 @@ interface ResultRowDataProps {
   item: PaletteItem;
   index: number;
   selected: boolean;
+  actionsVisible: boolean;
   highlightQuery: string;
 }
 
 interface ResultRowInteractionProps {
   onItemClick: (index: number) => void;
   onItemHover: (index: number) => void;
+  onActionsHover: (itemId: string | null) => void;
   onItemContextMenu?: (index: number) => boolean;
-  hasItemActions?: (item: PaletteItem) => boolean;
-  onItemActions?: (index: number, fromKeyboard: boolean) => void;
-  openActionsIndex?: number;
-  actionsMenuId?: string;
 }
 
 export type ResultRowProps = ResultRowDataProps & ResultRowInteractionProps;

@@ -1,20 +1,25 @@
+import { isTabSwitcherModifierKey, type TabSwitcherReleaseKey } from './tabSwitcherKeyRelease';
+
 export type PopupLaunchMode = 'commands' | 'tabs';
 
 export interface PopupLaunchIntent {
   mode: PopupLaunchMode;
   autoSwitchOnRelease: boolean;
   openedAt: number;
+  releaseKey?: TabSwitcherReleaseKey | null;
 }
 
 const modeKey = 'nextPaletteMode';
-const releaseKey = 'nextTabSwitcherAutoSwitchOnRelease';
+const autoSwitchKey = 'nextTabSwitcherAutoSwitchOnRelease';
+const releaseModifierKey = 'nextTabSwitcherReleaseKey';
 const openedAtKey = 'paletteRequestedAt';
-const intentKeys = [modeKey, releaseKey, openedAtKey] as const;
+const intentKeys = [modeKey, autoSwitchKey, releaseModifierKey, openedAtKey] as const;
 
 export const writePopupLaunchIntent = async (intent: PopupLaunchIntent): Promise<void> => {
   await chrome.storage.session.set({
     [modeKey]: intent.mode,
-    [releaseKey]: intent.autoSwitchOnRelease,
+    [autoSwitchKey]: intent.autoSwitchOnRelease,
+    [releaseModifierKey]: intent.releaseKey ?? null,
     [openedAtKey]: intent.openedAt,
   });
 };
@@ -28,7 +33,8 @@ export const consumePopupLaunchIntent = async (): Promise<Partial<PopupLaunchInt
 
   return {
     mode: mode === 'commands' || mode === 'tabs' ? mode : undefined,
-    autoSwitchOnRelease: stored[releaseKey] === true,
+    autoSwitchOnRelease: stored[autoSwitchKey] === true,
+    releaseKey: isTabSwitcherModifierKey(stored[releaseModifierKey]) ? stored[releaseModifierKey] : null,
     openedAt: typeof openedAt === 'number' && openedAt > 0 ? openedAt : undefined,
   };
 };
@@ -41,5 +47,5 @@ export const parsePopupLaunchFallback = (parameters: URLSearchParams): PopupLaun
     return null;
   }
 
-  return { mode, openedAt, autoSwitchOnRelease: false };
+  return { mode, openedAt, autoSwitchOnRelease: false, releaseKey: null };
 };

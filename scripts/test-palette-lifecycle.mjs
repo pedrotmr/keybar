@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { mock, test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import { createServer } from 'vite';
@@ -69,6 +70,11 @@ test('command palette lifecycle', async () => {
       '/src/components/CommandPalette/useCommandPaletteModel.ts',
     );
     const { defaultThemePreferences } = await server.ssrLoadModule('/src/themes/index.ts');
+    const { SearchArea } = await server.ssrLoadModule('/src/components/CommandPalette/SearchArea/SearchArea.tsx');
+    const { ResultsList, resultDomId } = await server.ssrLoadModule('/src/components/ResultsList.tsx');
+    const { TabSwitcher } = await server.ssrLoadModule('/src/components/TabSwitcher.tsx');
+    const { toTabItems } = await server.ssrLoadModule('/src/utils/tabItems.ts');
+    const { searchProviders } = await server.ssrLoadModule('/src/utils/searchProviders.ts');
 
     const mount = async ({ handlers = {}, granted = [] } = {}) => {
       const runtimeEvent = event();
@@ -85,6 +91,7 @@ test('command palette lifecycle', async () => {
       };
       globalThis.chrome = {
         runtime: {
+          getURL: (path) => `chrome-extension://test/${path}`,
           onMessage: runtimeEvent,
           sendMessage: async (message) => {
             env.calls.push(message);
@@ -117,6 +124,21 @@ test('command palette lifecycle', async () => {
       assert.equal(env.runtimeEvent.listeners.size, 0, 'runtime subscriptions are disposed');
       assert.equal(env.storageEvent.listeners.size, 0, 'storage subscriptions are disposed');
     };
+
+    const actionToggleEnv = await mount();
+    const tabResultIndex = model.results.findIndex((item) => item.type === 'tab');
+    assert.ok(tabResultIndex >= 0, 'the command palette has a tab result for its Actions control');
+    await act(async () => {
+      assert.equal(model.handleResultContextMenu(tabResultIndex), true);
+    });
+    assert.ok(model.actionDock, 'the tab Actions dock opens');
+    const actionTrigger = document.createElement('button');
+    actionTrigger.className = 'result-actions-trigger';
+    await act(async () => model.handleContainerMouseDown({ target: actionTrigger, preventDefault() {} }));
+    assert.ok(model.actionDock, 'pressing the row Actions button does not dismiss the dock before its click');
+    await act(async () => model.toggleActionDock(tabResultIndex, false));
+    assert.equal(model.actionDock, null, 'the row Actions button can toggle its open dock closed');
+    await unmount(actionToggleEnv);
 
     const snapshots = [];
     const refreshEnv = await mount({
@@ -287,6 +309,92 @@ test('command palette lifecycle', async () => {
     assert.equal(model.highlightQuery, 'lunch', 'selected provider results reuse the provider query for highlighting');
     await unmount(keyboardEnv);
 
+    const scopeEnv = await mount();
+    const youtubeProvider = searchProviders.find((provider) => provider.id === 'youtube');
+    assert.ok(youtubeProvider, 'the provider registry exposes YouTube');
+    await act(async () => model.activateSuggestedProvider(youtubeProvider));
+    assert.equal(
+      model.scopeAnnouncement,
+      `Switched to ${youtubeProvider.name} search. Type a query to search.`,
+      'activating a provider announces the new search scope while focus stays in the combobox',
+    );
+    await act(async () => model.changeMode('settings'));
+    assert.equal(
+      model.scopeAnnouncement,
+      '',
+      'leaving provider scope through mode navigation clears stale status text',
+    );
+    await act(async () => model.changeMode('commands'));
+    await act(async () => model.activateSuggestedProvider(youtubeProvider));
+    assert.equal(
+      model.scopeAnnouncement,
+      `Switched to ${youtubeProvider.name} search. Type a query to search.`,
+      're-entering the same provider announces its scope again',
+    );
+    await act(async () =>
+      model.handleSearchKeyDown({
+        key: 'Backspace',
+        keyCode: 0,
+        nativeEvent: { isComposing: false },
+        preventDefault() {},
+      }),
+    );
+    assert.equal(model.activeProvider, null, 'Backspace returns from provider scope to command search');
+    assert.equal(model.scopeAnnouncement, 'Returned to Command Bar search.', 'returning announces command search');
+    await act(async () => model.activateSuggestedProvider(youtubeProvider));
+    await act(async () => model.handleSurfaceEscape(keyEvent('Escape')));
+    assert.equal(model.activeProvider, null, 'Escape leaves provider scope');
+    assert.equal(
+      model.scopeAnnouncement,
+      'Returned to Command Bar search.',
+      'Escape announces the return to command search',
+    );
+    await unmount(scopeEnv);
+
+    const keyboardTabs = [
+      { ...tab('First tab'), id: 42, index: 0 },
+      { ...tab('Second tab'), id: 43, index: 1, active: false },
+    ];
+    const activatedTabIds = [];
+    const keyboardSelectionEnv = await mount({
+      handlers: {
+        'tabs:list': () => keyboardTabs,
+        'tabs:current': () => keyboardTabs[0],
+        'tabs:activate': (message) => {
+          activatedTabIds.push(message.tabId);
+          return true;
+        },
+      },
+    });
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(async () => model.handleQueryChange('tab'));
+    const targetIndex = model.results.findIndex((item) => item.type === 'tab' && item.tabId === 43);
+    assert.ok(targetIndex >= 0, 'search finds the second open tab');
+    for (let step = 0; model.activeIndex !== targetIndex && step < model.results.length; step++) {
+      const key = targetIndex > model.activeIndex ? 'ArrowDown' : 'ArrowUp';
+      await act(async () =>
+        model.handleSearchKeyDown({
+          key,
+          keyCode: 0,
+          nativeEvent: { isComposing: false },
+          preventDefault() {},
+        }),
+      );
+    }
+    assert.equal(model.selectedItem?.tabId, 43, 'arrow keys move the active result to the second tab');
+    await act(async () => {
+      model.handleSearchKeyDown({
+        key: 'Enter',
+        keyCode: 13,
+        nativeEvent: { isComposing: false },
+        preventDefault() {},
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert.deepEqual(activatedTabIds, [43], 'Enter activates the selected tab');
+    assert.equal(closed, 1, 'successful keyboard selection closes the Command Bar');
+    await unmount(keyboardSelectionEnv);
+
     const savedRequests = { bookmarks: [], history: [] };
     const loadSaved = (source) => {
       const request = deferred();
@@ -385,8 +493,238 @@ test('command palette lifecycle', async () => {
       'the next selection expands the active group',
     );
     await unmount(groupEnv);
+    const uiEnv = await mount();
+    const renderedTab = toTabItems([tab('Readable long tab title')], 42, 1)[0];
+    const provider = youtubeProvider;
+    await act(async () =>
+      root.render(
+        createElement(
+          'div',
+          null,
+          createElement(SearchArea, {
+            activeProvider: provider,
+            providerCandidates: [],
+            query: 'query',
+            inputRef: { current: null },
+            selectedItem: renderedTab,
+            scopeAnnouncement: `Switched to ${provider.name} search. Type a query to search.`,
+            hasSelectedTab: true,
+            showResults: true,
+            resultsLength: 1,
+            actionDockId: 'command-center-actions',
+            actionDockOpen: false,
+            onQueryChange() {},
+            onSearchKeyDown() {},
+            onReturnToCommandSearch() {},
+            onActivateProvider() {},
+            onOpenSelectedActions() {},
+            onOpenSettings() {},
+          }),
+          createElement(ResultsList, {
+            items: [renderedTab],
+            selectedIndex: 0,
+            keyboardNavigationVersion: 0,
+            highlightQuery: '',
+            mode: 'commands',
+            isBusy: false,
+            actionsMenuId: 'command-center-actions-menu',
+            onItemClick() {},
+            onItemHover() {},
+            onItemActions() {},
+          }),
+        ),
+      ),
+    );
+    const ui = document.getElementById('test-root');
+    const searchInput = ui.querySelector('#command-center-search');
+    const searchLabel = ui.querySelector('label[for="command-center-search"]');
+    assert.ok(searchInput && searchLabel, 'the search combobox has a persistent label');
+    assert.equal(searchLabel.textContent.trim(), `${provider.verb} ${provider.name}`);
+    const scopeStatus = ui.querySelector('#search-scope-status');
+    assert.equal(scopeStatus.getAttribute('role'), 'status');
+    assert.equal(scopeStatus.textContent.trim(), `Switched to ${provider.name} search. Type a query to search.`);
+    const option = ui.querySelector('[role="option"]');
+    const actionButton = ui.querySelector('.result-actions-trigger');
+    assert.ok(option && actionButton, 'the selected tab and its actions control render');
+    assert.equal(option.querySelector('button'), null, 'listbox options contain no focusable Actions button');
+    assert.equal(actionButton.closest('[role="option"]'), null, 'the Actions button is outside the listbox option');
+    assert.equal(actionButton.getAttribute('aria-describedby'), resultDomId(renderedTab.id));
+    assert.equal(actionButton.getAttribute('aria-label'), `Actions for ${renderedTab.title}`);
+    const resultRow = option;
+    const resultsContent = ui.querySelector('.results-list-content');
+    await act(async () => actionButton.focus());
+    assert.ok(resultRow.classList.contains('is-actions-visible'), 'keyboard focus reserves space for row actions');
+    await act(async () => {
+      actionButton.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+    });
+    assert.ok(actionButton.classList.contains('is-hovered'), 'pointer hover reveals the row Actions control');
+    await act(async () => {
+      resultsContent.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+    });
+    assert.ok(!actionButton.classList.contains('is-hovered'), 'pointer exit clears hover styling');
+    assert.ok(
+      resultRow.classList.contains('is-actions-visible'),
+      'pointer exit preserves spacing while Actions has focus',
+    );
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+    });
+    assert.ok(
+      !resultRow.classList.contains('is-actions-visible'),
+      'pointer interaction clears keyboard-only spacing after the action menu closes',
+    );
+    await act(async () => {
+      actionButton.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    assert.ok(
+      resultRow.classList.contains('is-actions-visible'),
+      'keyboard interaction restores spacing for the focused Actions control',
+    );
+    await act(async () => actionButton.blur());
+    assert.ok(
+      !resultRow.classList.contains('is-actions-visible'),
+      'row spacing collapses after pointer and focus leave',
+    );
+    const actionShadowHost = document.createElement('div');
+    actionShadowHost.tabIndex = -1;
+    ui.appendChild(actionShadowHost);
+    const actionShadowRoot = actionShadowHost.attachShadow({ mode: 'open' });
+    const actionShadowMount = document.createElement('div');
+    actionShadowRoot.appendChild(actionShadowMount);
+    const actionShadowReactRoot = createRoot(actionShadowMount);
+    await act(async () =>
+      actionShadowReactRoot.render(
+        createElement(ResultsList, {
+          items: [renderedTab],
+          selectedIndex: 0,
+          keyboardNavigationVersion: 0,
+          highlightQuery: '',
+          mode: 'commands',
+          isBusy: false,
+          actionsMenuId: 'shadow-actions-menu',
+          onItemClick() {},
+          onItemHover() {},
+          onItemActions() {},
+        }),
+      ),
+    );
+    const shadowActionButton = actionShadowRoot.querySelector('.result-actions-trigger');
+    const shadowResultRow = actionShadowRoot.querySelector('.result-row');
+    assert.ok(shadowActionButton && shadowResultRow, 'row actions render inside the overlay shadow root');
+    await act(async () => shadowActionButton.focus());
+    assert.equal(document.activeElement, actionShadowHost, 'the closed page boundary exposes only the shadow host');
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+    });
+    assert.ok(
+      !shadowResultRow.classList.contains('is-actions-visible'),
+      'a pointer interaction inside the overlay clears keyboard-only spacing',
+    );
+    await act(async () => {
+      shadowActionButton.dispatchEvent(
+        new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }),
+      );
+    });
+    assert.ok(
+      shadowResultRow.classList.contains('is-actions-visible'),
+      'keyboard input on the focused shadow-root button restores its row spacing',
+    );
+    await act(async () => actionShadowReactRoot.unmount());
+    actionShadowHost.remove();
+    await unmount(uiEnv);
+
+    const switcherRuntimeEvent = event();
+    const switcherStorageEvent = event();
+    const previousSwitcherTab = { ...tab('Previous tab'), id: 43, active: false, index: 0 };
+    const nextSwitcherTab = { ...tab('Next tab'), id: 44, active: false, index: 1 };
+    const currentSwitcherTab = { ...tab('Current tab'), id: 42, index: 2 };
+    const switcherTabs = [previousSwitcherTab, nextSwitcherTab, currentSwitcherTab];
+    const switcherCalls = [];
+    const switcherActivatedTabIds = [];
+    let switcherClosed = 0;
+    globalThis.chrome = {
+      runtime: {
+        getURL: (path) => `chrome-extension://test/${path}`,
+        onMessage: switcherRuntimeEvent,
+        sendMessage: async (message) => {
+          switcherCalls.push(message);
+          const responses = {
+            'tabs:recent': () => switcherTabs,
+            'tabs:current': () => currentSwitcherTab,
+            'tabs:switcher-shown': () => ({ pendingCycles: 0 }),
+            'tabs:recent-previews': () => ({}),
+            'tabs:activate': (request) => {
+              switcherActivatedTabIds.push(request.tabId);
+              return true;
+            },
+            'tabs:switcher-hidden': () => true,
+          };
+          const response = responses[message.action];
+          assert.ok(response, `Unexpected Tab Switcher background action: ${message.action}`);
+          return { success: true, data: response(message) };
+        },
+      },
+      permissions: { getAll: async () => ({ permissions: [] }) },
+      storage: { onChanged: switcherStorageEvent },
+    };
+    root = createRoot(document.getElementById('test-root'));
+    await act(async () => {
+      root.render(
+        createElement(TabSwitcher, {
+          onClose: () => switcherClosed++,
+          autoSwitchOnRelease: false,
+          openedAt: Date.now(),
+          surface: 'popup',
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const switcherPanel = document.querySelector('.tab-switcher-panel[role="listbox"]');
+    assert.ok(switcherPanel, 'the Tab Switcher renders its horizontal listbox');
+    let switcherOptions = switcherPanel.querySelectorAll('[role="option"]');
+    assert.equal(switcherOptions.length, 3);
+    await act(async () =>
+      switcherPanel.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })),
+    );
+    switcherOptions = switcherPanel.querySelectorAll('[role="option"]');
+    const selectedSwitcherOption = switcherPanel.querySelector('[aria-selected="true"]');
+    assert.equal(selectedSwitcherOption.querySelector('.tab-card-title').textContent, 'Next tab');
+    assert.equal(switcherPanel.getAttribute('aria-activedescendant'), selectedSwitcherOption.id);
+    await act(async () => {
+      switcherPanel.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert.deepEqual(switcherActivatedTabIds, [44], 'Enter activates the Tab Switcher selection');
+    assert.equal(switcherClosed, 1, 'successful Tab Switcher selection closes the switcher');
+    assert.ok(switcherCalls.some((message) => message.action === 'tabs:switcher-shown'));
+    await act(async () => root.unmount());
+    root = null;
+
+    const css = await readFile(new URL('../src/styles/global.css', import.meta.url), 'utf8');
+    assert.match(css, /\.search-input\s*\{[^}]*caret-color:\s*var\(--cc-accent\)/);
+    assert.match(css, /\.search-input:focus-visible\s*\{[^}]*outline:\s*0/);
+    assert.match(
+      css,
+      /\.search-area:has\(\.search-input:focus-visible\) \.search-symbol\s*\{[^}]*color:\s*var\(--cc-accent\)/,
+    );
+    assert.match(
+      css,
+      /@media\s*\(forced-colors:\s*active\)[\s\S]*?button:focus-visible,\s*input:focus-visible,\s*select:focus-visible\s*\{[^}]*outline-color:\s*Highlight/,
+    );
+    assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?scroll-behavior:\s*auto !important/);
+    assert.match(
+      css,
+      /@media\s*\(hover:\s*hover\)[\s\S]*?\.result-row\.has-actions\s*\{[^}]*padding-inline-end:\s*12px/,
+    );
+    assert.match(css, /\.result-row\.has-actions\.is-actions-visible\s*\{[^}]*padding-inline-end:\s*48px/);
+    assert.match(css, /\.result-row\s*\{[^}]*padding-inline-end 160ms ease-out/);
+    assert.match(css, /\.tab-switcher-panel\s*\{[^}]*display:\s*flex;[^}]*overflow-x:\s*auto;/);
+    assert.match(
+      css,
+      /\.tab-card\.is-selected \.tab-card-title\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;[^}]*-webkit-line-clamp:\s*2;/,
+    );
     console.log(
-      'Palette lifecycle passed: stale snapshots, repeated Enter/retry, group toggles, permission revocation, IME/dialog keys, subscription cleanup.',
+      'Palette lifecycle passed: stale snapshots, repeated Enter/retry, group toggles, permission revocation, keyboard search/navigation/selection/back/close, scope announcements, listbox actions, focus and display CSS, subscription cleanup.',
     );
   } finally {
     if (root) await act(async () => root.unmount());

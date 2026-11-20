@@ -37,6 +37,7 @@ for (const releaseBeforeReady of [false, true]) {
           mode: 'tabs',
           autoSwitchOnRelease: true,
           openedAt: Date.now(),
+          releaseKey: 'Meta',
         });
       },
       { sourceId, surfaceFile: contentSurfaces.tabs.file },
@@ -61,3 +62,137 @@ for (const releaseBeforeReady of [false, true]) {
     await cdp.detach();
   });
 }
+
+test('Tab Switcher keeps the selected card visible while navigating at a narrow viewport', async ({ extension }) => {
+  const { context, worker, id } = extension;
+  await context.route('https://switch.test/**', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: `<title>${new URL(route.request().url()).pathname}</title><input>`,
+    }),
+  );
+  const source = await context.newPage();
+  await source.setViewportSize({ width: 600, height: 800 });
+  await source.goto('https://switch.test/source');
+  for (let index = 0; index < 6; index++) {
+    const tab = await context.newPage();
+    await tab.goto(`https://switch.test/tab-${index}`);
+  }
+  await source.bringToFront();
+
+  const cdp = await context.newCDPSession(source);
+  const root = await context.browser().newBrowserCDPSession();
+  const { targetInfos } = await root.send('Target.getTargets', { filter: [{ type: 'tab', exclude: false }] });
+  const target = targetInfos.find((tab) => tab.url === source.url());
+  expect(target).toBeDefined();
+  await root.send('Extensions.triggerAction', { id, targetId: target.targetId });
+  await expect(source.locator(`[id="${id}-command-center-surface"]`)).toBeVisible();
+  const sourceId = await worker.evaluate(
+    async () => (await chrome.tabs.query({})).find((tab) => tab.url === 'https://switch.test/source').id,
+  );
+  await worker.evaluate(
+    async ({ sourceId, surfaceFile }) => {
+      await chrome.scripting.executeScript({ target: { tabId: sourceId }, files: [surfaceFile] });
+      await chrome.tabs.sendMessage(sourceId, {
+        action: 'overlay:open',
+        mode: 'tabs',
+        autoSwitchOnRelease: false,
+        openedAt: Date.now(),
+      });
+    },
+    { sourceId, surfaceFile: contentSurfaces.tabs.file },
+  );
+
+  const surfaceId = `${id}-command-center-surface`;
+  const readPanel = () =>
+    worker.evaluate(
+      async ({ sourceId, surfaceId }) => {
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId: sourceId },
+          world: 'ISOLATED',
+          func: (surfaceId) => {
+            const surface = document.getElementById(surfaceId);
+            if (!(surface instanceof HTMLElement)) {
+              return null;
+            }
+
+            const shadowRoot = chrome.dom.openOrClosedShadowRoot(surface);
+            const panel = shadowRoot?.querySelector('.tab-switcher-panel[role="listbox"]');
+            const selectedCard = panel?.querySelector('[aria-selected="true"]');
+            if (!(panel instanceof HTMLElement) || !(selectedCard instanceof HTMLElement)) {
+              return null;
+            }
+
+            const panelBounds = panel.getBoundingClientRect();
+            const cardBounds = selectedCard.getBoundingClientRect();
+            const cards = Array.from(panel.querySelectorAll('[role="option"]'));
+            const viewportLeft = panelBounds.left + panel.clientLeft;
+            const viewportRight = viewportLeft + panel.clientWidth;
+
+            return {
+              animationFinished: panel.getAnimations().every((animation) => animation.playState === 'finished'),
+              focused: shadowRoot.activeElement === panel,
+              scrollLeft: panel.scrollLeft,
+              scrollable: panel.scrollWidth > panel.clientWidth,
+              selectedIndex: cards.indexOf(selectedCard),
+              selectedCount: cards.length,
+              selectedId: selectedCard.id,
+              selectedCardIsFullyVisible:
+                cardBounds.left >= viewportLeft - 0.5 && cardBounds.right <= viewportRight + 0.5,
+              bounds: {
+                x: panelBounds.x,
+                y: panelBounds.y,
+                width: panelBounds.width,
+                height: panelBounds.height,
+              },
+            };
+          },
+          args: [surfaceId],
+        });
+
+        return result?.result ?? null;
+      },
+      { sourceId, surfaceId },
+    );
+
+  await expect.poll(async () => (await readPanel())?.focused).toBe(true);
+  await expect.poll(async () => (await readPanel())?.scrollable).toBe(true);
+  await expect.poll(async () => (await readPanel())?.animationFinished).toBe(true);
+  const visibleTabCount = (await readPanel())?.selectedCount;
+  expect(visibleTabCount).toBeGreaterThan(1);
+  await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
+
+  await source.keyboard.press('Home');
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(0);
+  await source.setViewportSize({ width: 1200, height: 800 });
+  await source.keyboard.press('End');
+  const lastSelectedIndex = visibleTabCount - 1;
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(lastSelectedIndex);
+  await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
+
+  await source.setViewportSize({ width: 600, height: 800 });
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(lastSelectedIndex);
+  await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
+
+  await source.keyboard.press('ArrowRight');
+  await expect.poll(async () => (await readPanel())?.selectedIndex).toBe(0);
+  await expect.poll(async () => (await readPanel())?.selectedCardIsFullyVisible).toBe(true);
+
+  const panelBounds = (await readPanel())?.bounds;
+  expect(panelBounds).toBeDefined();
+  const selectedBeforeWheel = (await readPanel())?.selectedId;
+  expect(selectedBeforeWheel).toBeTruthy();
+  await source.mouse.move(panelBounds.x + panelBounds.width / 2, panelBounds.y + 5);
+  await expect.poll(async () => (await readPanel())?.selectedId).toBe(selectedBeforeWheel);
+  let previousScrollLeft = (await readPanel())?.scrollLeft;
+  expect(previousScrollLeft).toBeDefined();
+  for (let index = 0; index < 3; index++) {
+    await source.mouse.wheel(0, 25);
+    await expect.poll(async () => (await readPanel())?.selectedId).toBe(selectedBeforeWheel);
+    await expect.poll(async () => (await readPanel())?.scrollLeft).toBeGreaterThan(previousScrollLeft);
+    previousScrollLeft = (await readPanel())?.scrollLeft;
+  }
+
+  await root.detach();
+  await cdp.detach();
+});

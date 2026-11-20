@@ -40,6 +40,7 @@ export function CommandPalette(props: CommandPaletteProps) {
             query={model.query}
             inputRef={model.inputRef}
             selectedItem={model.selectedItem}
+            scopeAnnouncement={model.scopeAnnouncement}
             hasSelectedTab={model.selectedItem?.type === 'tab' && Boolean(model.selectedTab)}
             showResults={model.showResults}
             resultsLength={model.results.length}

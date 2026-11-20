@@ -122,9 +122,21 @@ export const createHost = (hostId: string, styles: string): CreatedOverlayHost =
       let current: Element | null = target;
 
       while (current) {
+        if (current instanceof HTMLElement && current.matches('.tab-switcher-panel') && !horizontal) {
+          const extent = current.scrollWidth - current.clientWidth;
+
+          if (extent > 0) {
+            current.scrollLeft = Math.max(0, Math.min(extent, current.scrollLeft + delta));
+            wheelEvent.preventDefault();
+            return;
+          }
+        }
+
         if (
           current instanceof HTMLElement &&
-          current.matches('.results-list, .settings-view, .flow-dialog, .action-dock-menu')
+          current.matches(
+            '.results-list-scroll, .results-list, .tab-switcher-panel, .settings-view, .flow-dialog, .action-dock-menu',
+          )
         ) {
           const position = horizontal ? current.scrollLeft : current.scrollTop;
           const extent = horizontal

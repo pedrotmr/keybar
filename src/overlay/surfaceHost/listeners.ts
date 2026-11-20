@@ -1,5 +1,6 @@
 import type { PaletteMode } from '@/types';
 import { wasCommandPaletteEscapeHandled } from '@/utils/escapeEvents';
+import { isTabSwitcherModifierKey } from '@/utils/tabSwitcherKeyRelease';
 import { hideHost, setPageInert, showHost } from './host';
 import type { OpenRequest, SurfaceController } from './types';
 
@@ -66,14 +67,18 @@ export const attachOverlayListeners = (controller: SurfaceController, mountPoint
     }
 
     const openedAt = Number.isFinite(message.openedAt) ? Number(message.openedAt) : Date.now();
+    const candidateReleaseKey = message.releaseKey;
+    const releaseKey =
+      candidateReleaseKey && isTabSwitcherModifierKey(candidateReleaseKey) ? candidateReleaseKey : null;
 
     if (bridge.openHandler) {
-      bridge.openHandler(Boolean(message.autoSwitchOnRelease), openedAt);
+      bridge.openHandler(Boolean(message.autoSwitchOnRelease), openedAt, releaseKey);
     } else {
       bridge.pendingClose = false;
       bridge.pendingOpen = true;
       bridge.pendingAutoSwitchOnRelease = Boolean(message.autoSwitchOnRelease);
       bridge.pendingOpenedAt = openedAt;
+      bridge.pendingReleaseKey = releaseKey;
       showHost(host);
       setPageInert(controller, true);
     }

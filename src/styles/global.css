@@ -335,6 +335,9 @@ select:focus-visible {
   color: var(--cc-subtle);
   opacity: 1;
 }
+.search-area:has(.search-input:focus-visible) .search-symbol {
+  color: var(--cc-accent);
+}
 .search-input:focus-visible {
   outline: 0;
 }
@@ -351,6 +354,7 @@ select:focus-visible {
 }
 .provider-mark {
   display: grid;
+  grid-template: 100% / 100%;
   width: 20px;
   height: 20px;
   flex: 0 0 auto;
@@ -358,11 +362,24 @@ select:focus-visible {
   color: var(--cc-text);
   line-height: 1;
 }
-.provider-mark svg {
+.provider-mark > :is(img, svg) {
   display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
+  width: var(--provider-logo-fit, 88%);
+  height: var(--provider-logo-fit, 88%);
+}
+.provider-mark > img {
+  object-fit: contain;
+}
+.provider-mark .provider-logo-dark {
+  display: none;
+}
+:root[data-appearance='dark'] .provider-mark .provider-logo-light,
+:host([data-appearance='dark']) .provider-mark .provider-logo-light {
+  display: none;
+}
+:root[data-appearance='dark'] .provider-mark .provider-logo-dark,
+:host([data-appearance='dark']) .provider-mark .provider-logo-dark {
+  display: block;
 }
 .provider-chip {
   display: inline-flex;
@@ -454,9 +471,10 @@ select:focus-visible {
   text-overflow: ellipsis;
 }
 .provider-hint .provider-hint-icon {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
+  --provider-logo-fit: 100%;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
 }
 .provider-candidates {
   display: flex;
@@ -524,25 +542,127 @@ kbd {
   flex: 1;
   overflow: hidden;
 }
-.results-list {
+.results-list-scroll {
   height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 10px;
   scrollbar-color: var(--cc-border-strong) transparent;
   scrollbar-width: thin;
 }
-.results-list.is-opening-list {
+.results-list-scroll.is-opening-list {
   overflow: hidden;
 }
-.results-list::-webkit-scrollbar {
+.results-list-scroll::-webkit-scrollbar {
   width: 7px;
 }
-.results-list::-webkit-scrollbar-thumb {
+.results-list-scroll::-webkit-scrollbar-thumb {
   border: 2px solid var(--cc-bg);
   border-radius: 8px;
   background: var(--cc-border-strong);
 }
+.results-list-content {
+  position: relative;
+  min-height: 100%;
+}
+.results-list {
+  min-height: 100%;
+  padding: 10px;
+}
+.results-list-scroll:has(.results-list:empty) {
+  display: none;
+}
+.results-list:empty {
+  display: none;
+}
+/* Keep row actions aligned with options without nesting controls inside listbox options. */
+.result-actions-layer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+}
+.result-actions-trigger {
+  position: absolute;
+  inset-inline-end: 22px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  place-items: center;
+  padding: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--cc-muted);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    width 160ms ease-out,
+    opacity 140ms ease-out,
+    transform 160ms ease-out,
+    background-color 100ms ease-out,
+    color 100ms ease-out;
+}
+.result-actions-trigger svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.result-actions-trigger[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--cc-text) 10%, transparent);
+  color: var(--cc-text);
+}
+.result-actions-trigger:active {
+  transform: scale(0.92);
+}
+.result-row.has-actions {
+  padding-inline-end: 48px;
+}
+@media (hover: hover) {
+  .result-actions-trigger {
+    width: 0;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(5px);
+  }
+  .result-row.has-actions {
+    padding-inline-end: 12px;
+  }
+  .result-row.has-actions.is-actions-visible {
+    padding-inline-end: 48px;
+  }
+  .result-actions-trigger.is-hovered,
+  .result-actions-trigger:focus-visible,
+  .result-actions-trigger[aria-expanded='true'] {
+    width: 28px;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+  .result-actions-trigger:hover {
+    background: color-mix(in srgb, var(--cc-text) 10%, transparent);
+    color: var(--cc-text);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .result-actions-trigger,
+  .result-row.has-actions {
+    transition: none;
+  }
+  .result-actions-trigger {
+    transform: none;
+  }
+}
+.result-row.is-selected {
+  border-color: transparent;
+  background: var(--cc-selection);
+}
+.result-row.is-selected .result-icon {
+  color: var(--cc-accent);
+}
+.result-row.is-selected .result-badge {
+  color: var(--cc-accent);
+}
+
 .result-row {
   position: relative;
   display: flex;
@@ -558,18 +678,8 @@ kbd {
   user-select: none;
   transition:
     background-color 120ms ease-out,
-    border-color 120ms ease-out,
-    opacity 180ms ease-out;
-}
-.result-row.is-selected {
-  border-color: var(--cc-selection-border);
-  background: var(--cc-selection);
-}
-.result-row.is-selected .result-icon {
-  color: var(--cc-accent);
-}
-.result-row.is-selected .result-badge {
-  color: var(--cc-accent);
+    opacity 180ms ease-out,
+    padding-inline-end 160ms ease-out;
 }
 .result-icon-wrap {
   display: grid;
@@ -657,6 +767,7 @@ kbd {
 }
 .result-badge {
   flex: 0 0 auto;
+  margin-inline-start: auto;
   max-width: 135px;
   overflow: hidden;
   color: var(--cc-subtle);
@@ -687,85 +798,12 @@ mark {
   font-weight: 500;
   box-decoration-break: clone;
 }
-.results-list:empty {
-  display: none;
-}
-
-.result-actions-trigger {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  place-items: center;
-  min-width: 0;
-  overflow: hidden;
-  margin: -4px 0;
-  padding: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--cc-muted);
-  cursor: pointer;
-  transition:
-    width 160ms ease-out,
-    flex-basis 160ms ease-out,
-    opacity 140ms ease-out,
-    background-color 100ms ease,
-    color 100ms ease,
-    transform 160ms ease-out;
-}
-.result-actions-trigger svg {
-  display: block;
-  width: 16px;
-  height: 16px;
-}
-.result-actions-trigger[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--cc-text) 10%, transparent);
-  color: var(--cc-text);
-}
-.result-actions-trigger:active {
-  transform: scale(0.92);
-}
-.result-row.has-actions .result-badge {
-  min-width: 0;
-  transition:
-    width 160ms ease-out,
-    max-width 160ms ease-out,
-    flex-basis 160ms ease-out,
-    padding 160ms ease-out,
-    opacity 140ms ease-out;
-}
-@media (hover: hover) {
-  .result-actions-trigger {
-    width: 0;
-    flex-basis: 0;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(5px);
-  }
-  .result-row:hover .result-actions-trigger,
-  .result-actions-trigger:focus-visible,
-  .result-actions-trigger[aria-expanded='true'] {
-    width: 28px;
-    flex-basis: 28px;
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0);
-  }
-  .result-actions-trigger:hover {
-    background: color-mix(in srgb, var(--cc-text) 10%, transparent);
-    color: var(--cc-text);
-  }
-}
-
 /* While the actions dock is open, the row it acts on stays clear and the rest of the bar recedes. */
 .command-center.has-action-dock .search-area {
   opacity: 0.8;
 }
-.command-center.has-action-dock .result-row:not(.is-actions-target) {
+.command-center.has-action-dock .result-row:not(.is-selected) {
   opacity: 0.55;
-}
-.result-row.is-actions-target {
-  border-color: color-mix(in srgb, var(--cc-accent) 40%, transparent);
 }
 /* The dock shares the results cell, so the auto-height overlay grows to fit it instead of clipping it. */
 .command-center.has-action-dock .results-region {
@@ -1671,7 +1709,7 @@ mark {
 .command-center.is-overlay-surface .results-region {
   flex: 0 1 auto;
 }
-.command-center.is-overlay-surface .results-list {
+.command-center.is-overlay-surface .results-list-scroll {
   height: auto;
   max-height: calc(var(--cc-bar-available) - var(--cc-search-height) - 2px);
 }
@@ -1693,13 +1731,13 @@ mark {
   gap: 8px;
 }
 .tab-switcher-panel {
-  display: grid;
+  display: flex;
   width: min(var(--tab-switcher-panel-width, 1440px), 88vw, calc(100vw - 48px));
   min-height: min(216px, calc(100dvh - 20px));
-  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: stretch;
   gap: 7px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 10px;
   border: 1px solid var(--cc-border);
   border-radius: 16px;
@@ -1707,6 +1745,7 @@ mark {
   color: var(--cc-text);
   box-shadow: var(--cc-shadow);
   pointer-events: auto;
+  scrollbar-width: thin;
   animation: surface-in 110ms ease-out both;
 }
 .tab-switcher-panel:focus-visible,
@@ -1719,8 +1758,9 @@ mark {
 }
 .tab-card {
   display: grid;
+  flex: 0 0 min(278px, calc(100vw - 72px));
   min-width: 0;
-  grid-template-rows: minmax(0, 1fr) 25px;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 7px;
   padding: 6px;
   border: 1px solid var(--cc-border);
@@ -1741,6 +1781,18 @@ mark {
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--cc-accent) 22%, transparent),
     0 6px 14px color-mix(in srgb, var(--cc-accent) 12%, transparent);
+}
+.tab-card.is-selected .tab-card-label {
+  align-items: flex-start;
+}
+.tab-card.is-selected .tab-card-title {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .tab-card-preview {
   position: relative;
@@ -1975,7 +2027,7 @@ mark {
     padding: 6px;
   }
   .cc-overlay-stage .tab-card {
-    grid-template-rows: minmax(0, 1fr) 22px;
+    grid-template-rows: minmax(0, 1fr) auto;
     gap: 4px;
     padding: 4px;
   }
@@ -2076,15 +2128,36 @@ body:has(.cc-root > .tab-switcher-overlay),
   select:focus-visible {
     outline-color: Highlight !important;
   }
-  .result-row.is-selected,
   .option-card.is-active,
   .tab-card.is-selected {
     outline: 1px solid Highlight;
     outline-offset: 1px;
   }
-  .result-row.is-selected,
   .tab-card.is-selected {
     border-color: Highlight;
+  }
+  .search-area:has(.search-input:focus-visible) .search-symbol {
+    color: Highlight;
+  }
+  .search-input {
+    caret-color: Highlight;
+  }
+  .result-row.is-selected {
+    border-color: transparent;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .result-row.is-selected
+    :is(
+      .result-icon-wrap,
+      .result-icon,
+      .result-title,
+      .result-subtitle,
+      .result-badge,
+      .tab-audible,
+      .favicon-fallback
+    ) {
+    color: HighlightText;
   }
   .action-dock-item:focus-visible {
     outline: 2px solid Highlight;

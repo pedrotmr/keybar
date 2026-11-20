@@ -51,6 +51,7 @@ export const useCommandPaletteModel = ({
   const [mode, setMode] = useState<CommandPaletteMode>(initialMode);
   const [query, setQuery] = useState('');
   const [activeProvider, setActiveProvider] = useState<SearchProviderDefinition | null>(null);
+  const [scopeAnnouncement, setScopeAnnouncement] = useState('');
   const providerOriginQuery = useRef('');
 
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -450,6 +451,7 @@ export const useCommandPaletteModel = ({
     setMode(nextMode);
     setQuery('');
     setActiveProvider(null);
+    setScopeAnnouncement('');
     setSelectedIndex(0);
 
     requestAnimationFrame(() => {
@@ -493,7 +495,11 @@ export const useCommandPaletteModel = ({
     }
 
     if (mode !== 'commands' || activeProvider || query.trim()) {
+      const wasInProvider = Boolean(activeProvider);
       changeMode('commands');
+      if (wasInProvider) {
+        setScopeAnnouncement('Returned to Command Bar search.');
+      }
       return;
     }
 
@@ -720,6 +726,7 @@ export const useCommandPaletteModel = ({
   const activateProvider = (provider: SearchProviderDefinition, nextQuery = ''): void => {
     providerOriginQuery.current = query;
     setActiveProvider(provider);
+    setScopeAnnouncement(`Switched to ${provider.name} search. Type a query to search.`);
     setQuery(nextQuery);
     setSelectedIndex(0);
     inputRef.current?.focus({ preventScroll: true });
@@ -731,6 +738,7 @@ export const useCommandPaletteModel = ({
 
   const returnToCommandSearch = (): void => {
     setActiveProvider(null);
+    setScopeAnnouncement('Returned to Command Bar search.');
     setQuery(providerOriginQuery.current);
     setSelectedIndex(0);
     inputRef.current?.focus({ preventScroll: true });
@@ -1294,6 +1302,10 @@ export const useCommandPaletteModel = ({
         return;
       }
 
+      if (target.closest('.result-actions-trigger')) {
+        return;
+      }
+
       if (target.closest('.result-row')) {
         event.preventDefault();
         return;
@@ -1337,6 +1349,7 @@ export const useCommandPaletteModel = ({
     query,
     highlightQuery,
     activeProvider,
+    scopeAnnouncement,
     providerCandidate,
     providerCandidates,
     inputRef,
