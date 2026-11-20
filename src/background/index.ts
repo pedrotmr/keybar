@@ -14,7 +14,11 @@ import {
   installTabSwitcherKeyReleaseMonitorInPage,
   type TabSwitcherReleaseKey,
 } from '@/utils/tabSwitcherKeyRelease';
-import { PALETTE_TABS_SNAPSHOT_KEY, type PaletteTabsSnapshot } from '@/utils/paletteTabsSnapshot';
+import {
+  isPaletteTabsSnapshot,
+  PALETTE_TABS_SNAPSHOT_KEY,
+  type PaletteTabsSnapshot,
+} from '@/utils/paletteTabsSnapshot';
 import artifacts from '../../extension-artifacts.json';
 import { applyPageTitleOverride, restorePageTitleOverride } from '@/utils/pageTitleOverride';
 import {
@@ -25,6 +29,7 @@ import {
   handleUpdatedTabName,
   duplicateTabWithName,
   renameTab,
+  setTabNamesChangeNotifier,
   tabNameSessionInitialization,
 } from './tabNames';
 
@@ -60,6 +65,11 @@ const overlayTabRegistry = new OverlayTabRegistry({
     await chrome.storage.session.set({ [OVERLAY_TAB_IDS_SESSION_KEY]: tabIds });
   },
   notify: (tabId, message = { action: 'ui:tabs-changed' }) => chrome.tabs.sendMessage(tabId, message),
+});
+
+setTabNamesChangeNotifier(() => {
+  void chrome.runtime.sendMessage({ action: 'ui:tabs-changed' }).catch(() => undefined);
+  void overlayTabRegistry.broadcast().catch(() => undefined);
 });
 
 const tabSwitcherOpenWindows = new Set<number>();
@@ -151,7 +161,13 @@ const openOverlay = async (
   }
 
   await chrome.action.setPopup({ tabId, popup: '' });
-  const request = { action: 'overlay:open', mode, autoSwitchOnRelease, openedAt, releaseKey };
+  const storedSnapshot: Record<string, unknown> = await chrome.storage.session
+    .get(PALETTE_TABS_SNAPSHOT_KEY)
+    .catch(() => ({}));
+  const tabsSnapshot = isPaletteTabsSnapshot(storedSnapshot[PALETTE_TABS_SNAPSHOT_KEY])
+    ? storedSnapshot[PALETTE_TABS_SNAPSHOT_KEY]
+    : undefined;
+  const request = { action: 'overlay:open', mode, autoSwitchOnRelease, openedAt, releaseKey, tabsSnapshot };
 
   try {
     const response = (await chrome.tabs.sendMessage(tabId, request)) as { success?: boolean } | undefined;
@@ -1181,8 +1197,10 @@ const listTabs = async (): Promise<
     chrome.tabs.query({}),
     chrome.windows.getAll({ windowTypes: ['normal'] }),
     getTabNames(),
-    chrome.windows.getLastFocused(),
+    chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => undefined),
   ]);
+
+  const focusedWindowId = focusedWindow?.id;
 
   const windowTitles = new Map(
     windows.flatMap((window, index) => {
@@ -1214,17 +1232,20 @@ const listTabs = async (): Promise<
     })
     .sort(
       (a, b) =>
-        Number(b.active && b.windowId === focusedWindow.id) - Number(a.active && a.windowId === focusedWindow.id) ||
+        Number(b.active && b.windowId === focusedWindowId) - Number(a.active && a.windowId === focusedWindowId) ||
         (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0),
     );
 
-  const focusedActive = listed.find((tab) => tab.active && tab.windowId === focusedWindow.id);
+  const focusedActive =
+    (typeof focusedWindowId === 'number'
+      ? listed.find((tab) => tab.active && tab.windowId === focusedWindowId)
+      : undefined) ?? listed.find((tab) => tab.active);
   void chrome.storage.session
     .set({
       [PALETTE_TABS_SNAPSHOT_KEY]: {
         tabs: listed,
         currentTabId: focusedActive?.id ?? null,
-        currentWindowId: typeof focusedWindow.id === 'number' ? focusedWindow.id : null,
+        currentWindowId: typeof focusedWindowId === 'number' ? focusedWindowId : null,
       } satisfies PaletteTabsSnapshot,
     })
     .catch(() => undefined);

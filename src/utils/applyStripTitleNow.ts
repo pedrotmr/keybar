@@ -11,7 +11,7 @@ export const applyStripTitleNow = async (
   tabId: number,
   name: string,
   url: string | undefined,
-  options?: { surface?: 'popup' | 'overlay'; isCurrentTab?: boolean; previousCustomName?: string; originalTitle?: string },
+  options?: { previousCustomName?: string; originalTitle?: string },
 ): Promise<void> => {
   const customName = normalizeCustomTabTitle(name);
   const origin = getHttpOrigin(url);
@@ -20,15 +20,8 @@ export const applyStripTitleNow = async (
     return;
   }
 
-  // Overlay runs in the page: renaming the current tab can update document.title synchronously.
-  if (options?.surface === 'overlay' && options.isCurrentTab && typeof document !== 'undefined') {
-    if (customName) {
-      document.title = customName;
-    } else if (options.originalTitle) {
-      document.title = options.originalTitle;
-    }
-  }
-
+  // Always go through the MAIN-world injector so originalTitle is captured before
+  // document.title changes. Never write document.title from the overlay world first.
   if (typeof chrome.scripting?.executeScript === 'function') {
     if (customName) {
       await applyPageTitleOverride(tabId, customName, origin);
@@ -42,7 +35,6 @@ export const applyStripTitleNow = async (
     return;
   }
 
-  // Content-script overlay for another tab: ask the service worker to inject only.
   if (customName) {
     await sendBackground('tabs:set-strip-title', { tabId, name: customName, origin });
     return;

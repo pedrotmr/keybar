@@ -1,4 +1,5 @@
 import type { BookmarkItem, CommandItem, HistoryItem, PaletteItem, ThemePreferences } from '@/types';
+import type { PaletteTabsSnapshot } from '@/utils/paletteTabsSnapshot';
 import type { SearchProviderDefinition } from '@/utils/searchProviders';
 import type { ManagedTab } from '@/utils/tabItems';
 import type { ResultsEmptyState } from '../ResultsList/types';
@@ -60,6 +61,8 @@ export interface CommandPaletteProps {
   onClose?: () => void;
   themeRoot?: HTMLElement;
   cacheThemeInLocalStorage?: boolean;
+  /** Overlay open path: snapshot delivered through overlay:open (session storage is unavailable in content scripts). */
+  initialTabsSnapshot?: PaletteTabsSnapshot | null;
 }
 
 export interface PaletteDataItems {

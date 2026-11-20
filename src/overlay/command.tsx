@@ -3,7 +3,7 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { mountOverlaySurface } from './surfaceHost/mountOverlaySurface';
 import styleText from '@/styles/global.css?inline';
 
-mountOverlaySurface('commands', styleText, ({ theme, themeRoot, onClose }) =>
+mountOverlaySurface('commands', styleText, ({ theme, themeRoot, onClose, tabsSnapshot }) =>
   createElement(CommandPalette, {
     initialMode: 'commands',
     initialTheme: theme,
@@ -11,5 +11,6 @@ mountOverlaySurface('commands', styleText, ({ theme, themeRoot, onClose }) =>
     cacheThemeInLocalStorage: false,
     onClose,
     surface: 'overlay',
+    initialTabsSnapshot: tabsSnapshot,
   }),
 );

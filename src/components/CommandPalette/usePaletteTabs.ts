@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sendBackground } from '@/utils/chromeHelpers';
-import { isPaletteTabsSnapshot, PALETTE_TABS_SNAPSHOT_KEY } from '@/utils/paletteTabsSnapshot';
+import {
+  isPaletteTabsSnapshot,
+  PALETTE_TABS_SNAPSHOT_KEY,
+  type PaletteTabsSnapshot,
+} from '@/utils/paletteTabsSnapshot';
 import { normalizeTabNames, TAB_NAMES_STORAGE_KEY } from '@/utils/tabNamePersistence';
 import { recordTiming } from './helpers';
 import type { CommandCenterRuntimeMessage, ToastMessage } from './types';
@@ -9,6 +13,7 @@ import type { ManagedTab } from '@/utils/tabItems';
 interface UsePaletteTabsOptions {
   surface: 'popup' | 'overlay';
   notify: (message: string, tone?: ToastMessage['tone']) => void;
+  initialTabsSnapshot?: PaletteTabsSnapshot | null;
 }
 
 type SplitCapabilities = { create: boolean; unsplit: boolean };
@@ -48,7 +53,7 @@ const withGroupLabels = (tabs: ManagedTab[], groups: chrome.tabGroups.TabGroup[]
   });
 };
 
-export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
+export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: UsePaletteTabsOptions) => {
   const [tabs, setTabs] = useState<ManagedTab[]>([]);
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
   const [currentWindowId, setCurrentWindowId] = useState<number | null>(null);
@@ -62,18 +67,34 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
   const hasLiveTabs = useRef(false);
   const groupsAllowed = useRef<boolean | null>(null);
   const splitSupport = useRef<SplitCapabilities | null>(null);
+  const pendingPatches = useRef(new Map<number, Partial<ManagedTab>>());
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
+
+  const mergePending = useCallback((nextTabs: ManagedTab[]): ManagedTab[] => {
+    if (!pendingPatches.current.size) {
+      return nextTabs;
+    }
+
+    return nextTabs.map((tab) => {
+      if (tab.id === undefined) {
+        return tab;
+      }
+
+      const patch = pendingPatches.current.get(tab.id);
+      return patch ? { ...tab, ...patch } : tab;
+    });
+  }, []);
 
   const paintOptimistic = useCallback((nextTabs: ManagedTab[], currentTabIdValue: number | null, windowId: number | null) => {
     if (hasLiveTabs.current || !nextTabs.length) {
       return;
     }
 
-    setTabs(nextTabs);
+    setTabs(mergePending(nextTabs));
     setCurrentTabId(currentTabIdValue);
     setCurrentWindowId(windowId);
-  }, []);
+  }, [mergePending]);
 
   const ensureCaps = useCallback(async (requestVersion: number): Promise<boolean> => {
     if (groupsAllowed.current !== null && splitSupport.current !== null) {
@@ -100,8 +121,6 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
     const requestVersion = ++tabRefreshVersion.current;
     const started = performance.now();
 
-    // Caps + groups run alongside tabs:list when already known; otherwise caps resolve in parallel
-    // and groups start as soon as permission is confirmed.
     const capsPromise = ensureCaps(requestVersion);
     const groupsKnown = groupsAllowed.current === true;
     const groupsPromise = groupsKnown
@@ -111,7 +130,7 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
     let nextTabs: ManagedTab[];
 
     try {
-      // tabs:list is sorted with the focused active tab first — no separate tabs:current round-trip.
+      // tabs:list is sorted with the focused normal-window active tab first.
       nextTabs = await sendBackground('tabs:list');
     } catch (error: unknown) {
       if (requestVersion === tabRefreshVersion.current) {
@@ -126,7 +145,7 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
     }
 
     const current = nextTabs.find((tab) => tab.active) ?? null;
-    setTabs(nextTabs);
+    setTabs(mergePending(nextTabs));
     setCurrentTabId(current?.id ?? null);
     setCurrentWindowId(current?.windowId ?? null);
     hasLiveTabs.current = true;
@@ -150,16 +169,34 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
     }
 
     setGroups(nextGroups);
-    setTabs(withGroupLabels(nextTabs, nextGroups));
-  }, [ensureCaps]);
+    // Merge into current state so an optimistic pin/mute/rename is not replayed away.
+    setTabs((current) => withGroupLabels(current.length ? current : mergePending(nextTabs), nextGroups));
+  }, [ensureCaps, mergePending]);
 
   const patchTab = useCallback((tabId: number, patch: Partial<ManagedTab>) => {
+    pendingPatches.current.set(tabId, { ...pendingPatches.current.get(tabId), ...patch });
     setTabs((current) => current.map((tab) => (tab.id === tabId ? { ...tab, ...patch } : tab)));
+  }, []);
+
+  const settleTabPatch = useCallback((tabId: number, patch?: Partial<ManagedTab>) => {
+    pendingPatches.current.delete(tabId);
+
+    if (patch) {
+      setTabs((current) => current.map((tab) => (tab.id === tabId ? { ...tab, ...patch } : tab)));
+    }
   }, []);
 
   useEffect(() => {
     performance.clearMarks('cc:ui-mounted');
     performance.mark('cc:ui-mounted');
+
+    if (isPaletteTabsSnapshot(initialTabsSnapshot) && initialTabsSnapshot.tabs.length) {
+      paintOptimistic(
+        initialTabsSnapshot.tabs,
+        initialTabsSnapshot.currentTabId,
+        initialTabsSnapshot.currentWindowId,
+      );
+    }
 
     const loadPermissions = async () => {
       try {
@@ -168,7 +205,6 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
 
         const next = new Set(granted.permissions ?? []);
         setPermissions(next);
-        // Seed the groups cache so the next refresh can fetch groups in parallel with tabs.
         if (groupsAllowed.current === null) {
           groupsAllowed.current = next.has('tabGroups');
         }
@@ -188,6 +224,12 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
     };
 
     const hydrateFromSessionCache = async () => {
+      // Content-script overlays cannot read chrome.storage.session; they get a snapshot
+      // through overlay:open instead.
+      if (surface === 'overlay') {
+        return;
+      }
+
       const stored = await chrome.storage.session.get(PALETTE_TABS_SNAPSHOT_KEY);
       if (hasLiveTabs.current) {
         return;
@@ -201,8 +243,6 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
       paintOptimistic(cached.tabs, cached.currentTabId, cached.currentWindowId);
     };
 
-    // Popup can query tabs directly — no service-worker round trip — so pinned tabs and
-    // rename targets paint on the first frame while the full background list catches up.
     const hydrateFromLocalTabs = async () => {
       if (surface !== 'popup' || typeof chrome.tabs?.query !== 'function') {
         return;
@@ -210,7 +250,7 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
 
       const [queried, focusedWindow, storedNames] = await Promise.all([
         chrome.tabs.query({}),
-        chrome.windows.getLastFocused().catch(() => null),
+        chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null),
         chrome.storage.local.get(TAB_NAMES_STORAGE_KEY),
       ]);
 
@@ -257,7 +297,7 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
 
       chrome.runtime.onMessage.removeListener(handleRuntimeMessage);
     };
-  }, [paintOptimistic, refreshTabs, surface]);
+  }, [initialTabsSnapshot, mergePending, paintOptimistic, refreshTabs, surface]);
 
   return {
     tabs,
@@ -270,5 +310,6 @@ export const usePaletteTabs = ({ surface, notify }: UsePaletteTabsOptions) => {
     splitCapabilities,
     refreshTabs,
     patchTab,
+    settleTabPatch,
   };
 };

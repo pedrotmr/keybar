@@ -1722,7 +1722,7 @@ mark {
 }
 .command-center.is-overlay-surface .results-list-scroll {
   height: auto;
-  max-height: var(--cc-results-body-height);
+  max-height: min(var(--cc-results-body-height), calc(var(--cc-bar-available) - var(--cc-search-height) - 2px));
 }
 .command-center.is-overlay-surface .settings-view {
   max-height: calc(var(--cc-bar-available) - 2px);

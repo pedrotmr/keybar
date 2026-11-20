@@ -48,6 +48,7 @@ export const useCommandPaletteModel = ({
   onClose,
   themeRoot,
   cacheThemeInLocalStorage = true,
+  initialTabsSnapshot = null,
 }: CommandPaletteProps) => {
   const [mode, setMode] = useState<CommandPaletteMode>(initialMode);
   const [query, setQuery] = useState('');
@@ -141,7 +142,8 @@ export const useCommandPaletteModel = ({
     splitCapabilities,
     refreshTabs,
     patchTab,
-  } = usePaletteTabs({ surface, notify });
+    settleTabPatch,
+  } = usePaletteTabs({ surface, notify, initialTabsSnapshot });
 
   const { bookmarks, history, localDataLoading, localDataLoaded, loadLocalData } = useSavedPages(permissions, notify);
 
@@ -961,8 +963,6 @@ export const useCommandPaletteModel = ({
             : previousOriginalTitle,
         });
         void applyStripTitleNow(tabId, nextName, previousTab?.url, {
-          surface,
-          isCurrentTab: previousTab?.id === currentTabId,
           previousCustomName,
           originalTitle: previousOriginalTitle ?? previousTab?.title,
         });
@@ -974,21 +974,26 @@ export const useCommandPaletteModel = ({
             if (!nextName) {
               if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
                 patchTab(tabId, { customName: previousCustomName, originalTitle: previousOriginalTitle });
+                settleTabPatch(tabId);
                 notify(
                   result.stripReason === 'site-access-required'
                     ? 'Could not remove the custom title from Chrome’s tab strip. Approve access, then try again.'
                     : 'Could not remove the custom title from Chrome’s tab strip. Try again.',
                 );
+                return;
               }
 
+              settleTabPatch(tabId);
               return;
             }
 
             if (result.record) {
-              patchTab(tabId, {
+              settleTabPatch(tabId, {
                 customName: result.record.customName,
                 originalTitle: result.record.originalTitle,
               });
+            } else {
+              settleTabPatch(tabId);
             }
 
             if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
@@ -1004,6 +1009,7 @@ export const useCommandPaletteModel = ({
           })
           .catch((error: unknown) => {
             patchTab(tabId, { customName: previousCustomName, originalTitle: previousOriginalTitle });
+            settleTabPatch(tabId);
             notify(error instanceof Error ? error.message : 'Could not rename that tab.');
           });
 
@@ -1068,8 +1074,10 @@ export const useCommandPaletteModel = ({
 
     try {
       await sendBackground('tabs:pin', { tabId: tab.id, pinned: nextPinned });
+      settleTabPatch(tab.id);
     } catch (error) {
       patchTab(tab.id, { pinned: tab.pinned });
+      settleTabPatch(tab.id);
       notify(error instanceof Error ? error.message : 'Could not change the pin state.');
     }
   };
@@ -1089,8 +1097,10 @@ export const useCommandPaletteModel = ({
 
     try {
       await sendBackground('tabs:mute', { tabId: tab.id, muted: nextMuted });
+      settleTabPatch(tab.id);
     } catch (error) {
       patchTab(tab.id, { mutedInfo: previousMutedInfo });
+      settleTabPatch(tab.id);
       notify(error instanceof Error ? error.message : 'Could not change the audio state.');
     }
   };
