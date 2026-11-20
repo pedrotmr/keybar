@@ -355,180 +355,145 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
   const customName = normalizeCustomTabTitle(name).slice(0, 120);
   const generation = bumpStripGeneration(tabId);
 
-  // Start strip injection before the name queue for responsiveness. Track the applied
-  // result so a storage-read failure (before deferRollback) can still restore the title.
-  const tabSnapshot = await chrome.tabs.get(tabId).catch(() => null);
-  const snapshotOrigin = getHttpOrigin(tabSnapshot?.url);
-  const wantEarlyStrip =
-    Boolean(customName) && Boolean(snapshotOrigin) && isScriptableHttpUrl(tabSnapshot?.url);
+  // Strip injection runs only after the storage read, with deferRollback registered
+  // immediately on success — so a failed write cannot leave an unowned strip title,
+  // and a rollback cannot clear a newer rename's override (customName-matched restore).
+  const result = await withNamesMutation(async (names, deferRollback) => {
+    const tab = await chrome.tabs.get(tabId);
+    const origin = getHttpOrigin(tab.url);
+    const wantStrip = Boolean(customName) && Boolean(origin) && isScriptableHttpUrl(tab.url);
+    const previous = names[String(tabId)];
 
-  let earlyApplied: Awaited<ReturnType<typeof applyPageTitleOverride>> | null = null;
-  let stripOwnedByMutation = false;
-  const earlyStripApply =
-    wantEarlyStrip && snapshotOrigin
-      ? applyPageTitleOverride(tabId, customName, snapshotOrigin)
-          .then((applied) => {
-            earlyApplied = applied;
-            return applied;
-          })
-          .catch(() => null)
-      : null;
+    if (!customName) {
+      if (!previous?.showInTabStrip || !previous.tabStripOrigin) {
+        delete names[String(tabId)];
+        return { record: null, stripStatus: 'unchanged' as const };
+      }
 
-  const rollbackEarlyStrip = async (): Promise<void> => {
-    if (stripOwnedByMutation || !earlyApplied?.success || !snapshotOrigin) {
-      return;
+      const restored = await restorePageTitleOverride(
+        tabId,
+        previous.originalTitle,
+        previous.customName,
+        previous.tabStripOrigin,
+      );
+
+      if (!isCurrentStripGeneration(tabId, generation)) {
+        return { record: previous, stripStatus: 'unchanged' as const };
+      }
+
+      if (!restored.success) {
+        if (restored.reason === 'title-not-overridden' || restored.reason === 'origin-mismatch') {
+          delete names[String(tabId)];
+          if (restored.reason === 'title-not-overridden') {
+            deferRollback(async () => {
+              await applyPageTitleOverride(tabId, previous.customName, previous.tabStripOrigin!).catch(() => undefined);
+            });
+          }
+          return { record: null, stripStatus: 'restored' as const };
+        }
+
+        return {
+          record: previous,
+          stripStatus: restored.reason === 'site-access-required' ? ('denied' as const) : ('unavailable' as const),
+          stripReason: restored.reason,
+        };
+      }
+
+      delete names[String(tabId)];
+      deferRollback(async () => {
+        await applyPageTitleOverride(tabId, previous.customName, previous.tabStripOrigin!).catch(() => undefined);
+      });
+      return { record: null, stripStatus: 'restored' as const };
     }
 
-    await restorePageTitleOverride(tabId, earlyApplied.originalTitle, customName, snapshotOrigin).catch(() => undefined);
-  };
+    const pageTitle =
+      previous?.showInTabStrip &&
+      previous.tabStripOrigin === origin &&
+      titlesMatch(tab.title ?? '', previous.customName)
+        ? previous.originalTitle
+        : (tab.title ?? tab.url ?? 'Untitled tab');
 
-  try {
-    const result = await withNamesMutation(async (names, deferRollback) => {
-      const tab = await chrome.tabs.get(tabId);
-      const origin = getHttpOrigin(tab.url);
-      const wantStrip = Boolean(customName) && Boolean(origin) && isScriptableHttpUrl(tab.url);
-      const previous = names[String(tabId)];
+    const saved: RenamedTab = {
+      tabId,
+      customName,
+      originalTitle: pageTitle,
+      url: tab.url ?? '',
+      updatedAt: Date.now(),
+    };
 
-      if (!customName) {
-        if (!previous?.showInTabStrip || !previous.tabStripOrigin) {
-          delete names[String(tabId)];
-          return { record: null, stripStatus: 'unchanged' as const };
-        }
+    if (!wantStrip) {
+      await restoreStripOverride(tabId, previous);
+      names[String(tabId)] = saved;
+      return { record: saved, stripStatus: 'unavailable' as const, stripReason: 'unsupported-page' as const };
+    }
 
-        const restored = await restorePageTitleOverride(
-          tabId,
-          previous.originalTitle,
-          previous.customName,
-          previous.tabStripOrigin,
-        );
+    if (!isCurrentStripGeneration(tabId, generation)) {
+      return { record: previous ?? null, stripStatus: 'unchanged' as const };
+    }
 
-        if (!isCurrentStripGeneration(tabId, generation)) {
-          return { record: previous, stripStatus: 'unchanged' as const };
-        }
+    const applied = await applyPageTitleOverride(tabId, customName, origin!).catch(() => null);
 
-        if (!restored.success) {
-          if (restored.reason === 'title-not-overridden' || restored.reason === 'origin-mismatch') {
-            delete names[String(tabId)];
-            if (restored.reason === 'title-not-overridden') {
-              deferRollback(async () => {
-                await applyPageTitleOverride(tabId, previous.customName, previous.tabStripOrigin!).catch(() => undefined);
-              });
-            }
-            return { record: null, stripStatus: 'restored' as const };
-          }
-
-          return {
-            record: previous,
-            stripStatus: restored.reason === 'site-access-required' ? ('denied' as const) : ('unavailable' as const),
-            stripReason: restored.reason,
-          };
-        }
-
-        delete names[String(tabId)];
-        deferRollback(async () => {
-          await applyPageTitleOverride(tabId, previous.customName, previous.tabStripOrigin!).catch(() => undefined);
-        });
-        return { record: null, stripStatus: 'restored' as const };
+    if (!isCurrentStripGeneration(tabId, generation)) {
+      if (applied?.success) {
+        await restorePageTitleOverride(tabId, applied.originalTitle, customName, origin!).catch(() => undefined);
       }
+      return { record: previous ?? null, stripStatus: 'unchanged' as const };
+    }
 
-      const pageTitle =
-        previous?.showInTabStrip &&
-        previous.tabStripOrigin === origin &&
-        titlesMatch(tab.title ?? '', previous.customName)
-          ? previous.originalTitle
-          : (tab.title ?? tab.url ?? 'Untitled tab');
+    if (!applied?.success) {
+      const live = await chrome.tabs.get(tabId).catch(() => null);
+      const liveOrigin = getHttpOrigin(live?.url);
+      const previousStillActive =
+        Boolean(previous?.showInTabStrip) &&
+        Boolean(previous?.tabStripOrigin) &&
+        previous?.tabStripOrigin === liveOrigin;
 
-      const saved: RenamedTab = {
-        tabId,
-        customName,
-        originalTitle: pageTitle,
-        url: tab.url ?? '',
-        updatedAt: Date.now(),
-      };
-
-      if (!wantStrip) {
-        await restoreStripOverride(tabId, previous);
-        names[String(tabId)] = saved;
-        return { record: saved, stripStatus: 'unavailable' as const, stripReason: 'unsupported-page' as const };
-      }
-
-      const applied =
-        earlyStripApply && origin === snapshotOrigin
-          ? await earlyStripApply
-          : await applyPageTitleOverride(tabId, customName, origin!).catch(() => null);
-
-      // A newer rename/clear superseded us — undo our early inject before leaving.
-      if (!isCurrentStripGeneration(tabId, generation)) {
-        if (earlyStripApply) {
-          await earlyStripApply.catch(() => null);
-        }
-        await rollbackEarlyStrip();
-        return { record: previous ?? null, stripStatus: 'unchanged' as const };
-      }
-
-      if (!applied?.success) {
-        const live = await chrome.tabs.get(tabId).catch(() => null);
-        const liveOrigin = getHttpOrigin(live?.url);
-        const previousStillActive =
-          Boolean(previous?.showInTabStrip) &&
-          Boolean(previous?.tabStripOrigin) &&
-          previous?.tabStripOrigin === liveOrigin;
-
-        if (previousStillActive && previous) {
-          return {
-            record: previous,
-            stripStatus: applied?.reason === 'site-access-required' ? ('denied' as const) : ('unavailable' as const),
-            stripReason: applied?.reason,
-          };
-        }
-
-        const liveTitle = live?.title ?? '';
-        const keybarOnly: RenamedTab = {
-          tabId,
-          customName,
-          originalTitle:
-            previous?.customName && titlesMatch(liveTitle, previous.customName)
-              ? previous.originalTitle
-              : liveTitle || live?.url || pageTitle,
-          url: live?.url ?? '',
-          updatedAt: Date.now(),
-        };
-
-        names[String(tabId)] = keybarOnly;
+      if (previousStillActive && previous) {
         return {
-          record: keybarOnly,
+          record: previous,
           stripStatus: applied?.reason === 'site-access-required' ? ('denied' as const) : ('unavailable' as const),
           stripReason: applied?.reason,
         };
       }
 
-      // Hand strip ownership to storage rollback before any further work can fail.
-      deferRollback(async () => {
-        if (previous?.showInTabStrip && previous.tabStripOrigin === origin) {
-          await applyPageTitleOverride(tabId, previous.customName, previous.tabStripOrigin).catch(() => undefined);
-          return;
-        }
+      const liveTitle = live?.title ?? '';
+      const keybarOnly: RenamedTab = {
+        tabId,
+        customName,
+        originalTitle:
+          previous?.customName && titlesMatch(liveTitle, previous.customName)
+            ? previous.originalTitle
+            : liveTitle || live?.url || pageTitle,
+        url: live?.url ?? '',
+        updatedAt: Date.now(),
+      };
 
-        await restorePageTitleOverride(tabId, applied.originalTitle, customName, origin!).catch(() => undefined);
-      });
-      stripOwnedByMutation = true;
+      names[String(tabId)] = keybarOnly;
+      return {
+        record: keybarOnly,
+        stripStatus: applied?.reason === 'site-access-required' ? ('denied' as const) : ('unavailable' as const),
+        stripReason: applied?.reason,
+      };
+    }
 
-      saved.originalTitle = applied.originalTitle;
-      saved.showInTabStrip = true;
-      saved.tabStripOrigin = origin!;
-      names[String(tabId)] = saved;
-      return { record: saved, stripStatus: 'applied' as const };
+    deferRollback(async () => {
+      if (previous?.showInTabStrip && previous.tabStripOrigin === origin) {
+        await applyPageTitleOverride(tabId, previous.customName, previous.tabStripOrigin).catch(() => undefined);
+        return;
+      }
+
+      await restorePageTitleOverride(tabId, applied.originalTitle, customName, origin!).catch(() => undefined);
     });
 
-    notifyTabsChanged();
-    return result;
-  } catch (error) {
-    if (earlyStripApply) {
-      await earlyStripApply.catch(() => null);
-    }
-    await rollbackEarlyStrip();
-    throw error;
-  }
+    saved.originalTitle = applied.originalTitle;
+    saved.showInTabStrip = true;
+    saved.tabStripOrigin = origin!;
+    names[String(tabId)] = saved;
+    return { record: saved, stripStatus: 'applied' as const };
+  });
+
+  notifyTabsChanged();
+  return result;
 };
 
 const inheritTabNameInto = async (

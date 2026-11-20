@@ -171,9 +171,14 @@ function restorePageTitle(_storageTitle: string, _customName: string, expectedOr
   const pageWindow = window as unknown as Window & { [stateKey]?: PageState };
   const state = pageWindow[stateKey];
 
-  // Clear any Keybar-owned override on this origin. A BFCache document may still
-  // hold an older customName than storage after same-origin navigation.
-  if (window.location.origin !== expectedOrigin || !state || state.origin !== expectedOrigin) {
+  // Clear only the Keybar override that matches this customName. A newer rename on
+  // the same origin must not be wiped by an older rollback.
+  if (
+    window.location.origin !== expectedOrigin ||
+    !state ||
+    state.origin !== expectedOrigin ||
+    state.customName !== _customName
+  ) {
     return { restored: false };
   }
 

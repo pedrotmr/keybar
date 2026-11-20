@@ -180,11 +180,8 @@ const openOverlay = async (
   }
 
   await chrome.action.setPopup({ tabId, popup: '' });
-  let tabsSnapshot = await readPaletteTabsSnapshot();
-  if (!tabsSnapshot) {
-    // Cold / invalidated: build a session-safe list (names join only after session marker).
-    tabsSnapshot = await listTabs();
-  }
+  // Prefer a cached snapshot only when present; otherwise listTabs retries until stable.
+  const tabsSnapshot = (await readPaletteTabsSnapshot()) ?? (await listTabs());
   const request = { action: 'overlay:open', mode, autoSwitchOnRelease, openedAt, releaseKey, tabsSnapshot };
 
   try {
@@ -1189,7 +1186,7 @@ const setActiveTabZoom = async (action: string): Promise<boolean> => {
   return true;
 };
 
-const listTabs = async (): Promise<PaletteTabsSnapshot> => {
+const listTabsOnce = async (): Promise<{ snapshot: PaletteTabsSnapshot; writeGeneration: number }> => {
   const writeGeneration = paletteSnapshotWriteGeneration;
   const [tabs, windows, names, focusedWindow] = await Promise.all([
     chrome.tabs.query({}),
@@ -1242,18 +1239,31 @@ const listTabs = async (): Promise<PaletteTabsSnapshot> => {
         (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0),
     );
 
-  const snapshot = {
-    tabs: listed,
-    currentTabId,
-    currentWindowId,
-  } satisfies PaletteTabsSnapshot;
+  return {
+    writeGeneration,
+    snapshot: {
+      tabs: listed,
+      currentTabId,
+      currentWindowId,
+    } satisfies PaletteTabsSnapshot,
+  };
+};
 
-  // Skip writing if a newer invalidation landed while this list was in flight.
-  if (writeGeneration === paletteSnapshotWriteGeneration) {
-    void chrome.storage.session.set({ [PALETTE_TABS_SNAPSHOT_KEY]: snapshot }).catch(() => undefined);
+/** Returns a snapshot that survived invalidation, so overlay first paint cannot be stale mid-flight. */
+const listTabs = async (): Promise<PaletteTabsSnapshot> => {
+  let last: PaletteTabsSnapshot | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { snapshot, writeGeneration } = await listTabsOnce();
+    last = snapshot;
+
+    if (writeGeneration === paletteSnapshotWriteGeneration) {
+      void chrome.storage.session.set({ [PALETTE_TABS_SNAPSHOT_KEY]: snapshot }).catch(() => undefined);
+      return snapshot;
+    }
   }
 
-  return snapshot;
+  return last!;
 };
 
 // Warm the overlay/popup snapshot after session name init so the first open is not empty.
