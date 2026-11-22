@@ -82,6 +82,8 @@ const isCurrentStripGeneration = (tabId: number, generation: number): boolean =>
 /**
  * A superseded inject may have overwritten a newer rename/clear. Force-clear the
  * page override, then reinstall whatever strip name storage currently owns.
+ * Generation is checked around the reinstall so a clear that lands mid-repair
+ * cannot be undone by a delayed apply of the previous name.
  */
 const repairSupersededStripApply = async (
   tabId: number,
@@ -92,14 +94,21 @@ const repairSupersededStripApply = async (
     requireNameMatch: false,
   }).catch(() => undefined);
 
+  const generation = currentStripGeneration(tabId);
   const stored = await chrome.storage.local.get(localKey);
   const saved = normalizeTabNames(stored[localKey])[String(tabId)];
 
-  if (!saved?.showInTabStrip || !saved.tabStripOrigin) {
+  if (!saved?.showInTabStrip || !saved.tabStripOrigin || !isCurrentStripGeneration(tabId, generation)) {
     return;
   }
 
   await applyPageTitleOverride(tabId, saved.customName, saved.tabStripOrigin).catch(() => undefined);
+
+  if (!isCurrentStripGeneration(tabId, generation)) {
+    await restorePageTitleOverride(tabId, appliedOriginalTitle, '', saved.tabStripOrigin, {
+      requireNameMatch: false,
+    }).catch(() => undefined);
+  }
 };
 
 /**
@@ -122,6 +131,8 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
       originalTitle: string;
       customName: string;
       generation: number;
+      updatedAt: number;
+      tabStripOrigin: string;
     }> = [];
 
     await Promise.all(
@@ -151,6 +162,8 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
               originalTitle: applied.originalTitle,
               customName: name.customName,
               generation,
+              updatedAt: name.updatedAt,
+              tabStripOrigin: name.tabStripOrigin!,
             });
           }
         } catch {
@@ -173,7 +186,14 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
 
         const entry = fresh[String(update.tabId)];
 
-        if (entry && entry.customName === update.customName && entry.originalTitle !== update.originalTitle) {
+        // Skip when navigation/rename refreshed the record (updatedAt) or moved origin.
+        if (
+          entry &&
+          entry.customName === update.customName &&
+          entry.originalTitle !== update.originalTitle &&
+          entry.updatedAt === update.updatedAt &&
+          entry.tabStripOrigin === update.tabStripOrigin
+        ) {
           entry.originalTitle = update.originalTitle;
           changed = true;
         }
