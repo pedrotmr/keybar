@@ -157,7 +157,12 @@ function setPageTitle(
 }
 
 /** Injected into the page; must stay self-contained for executeScript. */
-function restorePageTitle(_storageTitle: string, _customName: string, expectedOrigin: string): { restored: boolean } {
+function restorePageTitle(
+  _storageTitle: string,
+  _customName: string,
+  expectedOrigin: string,
+  requireNameMatch: boolean,
+): { restored: boolean } {
   const stateKey = '__keybarTitleOverride';
   type PageState = {
     originalTitle: string;
@@ -171,14 +176,14 @@ function restorePageTitle(_storageTitle: string, _customName: string, expectedOr
   const pageWindow = window as unknown as Window & { [stateKey]?: PageState };
   const state = pageWindow[stateKey];
 
-  // Clear only the Keybar override that matches this customName. A newer rename on
-  // the same origin must not be wiped by an older rollback.
-  if (
-    window.location.origin !== expectedOrigin ||
-    !state ||
-    state.origin !== expectedOrigin ||
-    state.customName !== _customName
-  ) {
+  if (window.location.origin !== expectedOrigin || !state || state.origin !== expectedOrigin) {
+    return { restored: false };
+  }
+
+  // Rollbacks match customName so an older undo cannot wipe a newer rename.
+  // Explicit clears pass requireNameMatch=false to tear down any override and
+  // invalidate in-flight BFCache replies (including a stale older name).
+  if (requireNameMatch && state.customName !== _customName) {
     return { restored: false };
   }
 
@@ -244,8 +249,10 @@ export const restorePageTitleOverride = async (
   originalTitle: string,
   customName: string,
   expectedOrigin: string,
+  options?: { requireNameMatch?: boolean },
 ): Promise<TitleRestoreResult> => {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const requireNameMatch = options?.requireNameMatch !== false;
 
   if (!tab) {
     return { success: false, reason: 'restore-failed' };
@@ -261,7 +268,7 @@ export const restorePageTitleOverride = async (
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
       func: restorePageTitle,
-      args: [originalTitle, normalizeCustomTabTitle(customName), expectedOrigin],
+      args: [originalTitle, normalizeCustomTabTitle(customName), expectedOrigin, requireNameMatch],
     });
 
     if (!result?.result?.restored) {

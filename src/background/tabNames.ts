@@ -386,14 +386,19 @@ export const renameTab = async (tabId: number, name: string): Promise<RenameTabR
         return { record: null, stripStatus: 'unchanged' as const };
       }
 
+      // Explicit clear: tear down any page override (including a BFCache document that
+      // still carries an older customName) and invalidate pending pageshow replies.
       const restored = await restorePageTitleOverride(
         tabId,
         previous.originalTitle,
         previous.customName,
         previous.tabStripOrigin,
+        { requireNameMatch: false },
       );
 
       if (!isCurrentStripGeneration(tabId, generation)) {
+        // A newer rename may have been wiped by the force clear — leave storage alone
+        // so that rename's write (or a later refresh) owns the strip.
         return { record: previous, stripStatus: 'unchanged' as const };
       }
 
