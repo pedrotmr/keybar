@@ -1,5 +1,6 @@
 import type { PaletteMode } from '@/types';
 import { wasCommandPaletteEscapeHandled } from '@/utils/escapeEvents';
+import { isPaletteTabsSnapshot } from '@/utils/paletteTabsSnapshot';
 import { isTabSwitcherModifierKey } from '@/utils/tabSwitcherKeyRelease';
 import { hideHost, setPageInert, showHost } from './host';
 import type { OpenRequest, SurfaceController } from './types';
@@ -70,6 +71,8 @@ export const attachOverlayListeners = (controller: SurfaceController, mountPoint
     const candidateReleaseKey = message.releaseKey;
     const releaseKey =
       candidateReleaseKey && isTabSwitcherModifierKey(candidateReleaseKey) ? candidateReleaseKey : null;
+
+    bridge.pendingTabsSnapshot = isPaletteTabsSnapshot(message.tabsSnapshot) ? message.tabsSnapshot : null;
 
     if (bridge.openHandler) {
       bridge.openHandler(Boolean(message.autoSwitchOnRelease), openedAt, releaseKey);

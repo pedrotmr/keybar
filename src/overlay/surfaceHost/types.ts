@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Root } from 'react-dom/client';
 import type { ThemePreferences } from '@/types';
+import type { PaletteTabsSnapshot } from '@/utils/paletteTabsSnapshot';
 import type { TabSwitcherReleaseKey } from '@/utils/tabSwitcherKeyRelease';
 
 export type OverlaySurface = 'commands' | 'tabs';
@@ -9,6 +10,7 @@ interface SurfaceThemeActions {
   theme: ThemePreferences;
   themeRoot: HTMLElement;
   onClose: () => void;
+  tabsSnapshot: PaletteTabsSnapshot | null;
 }
 
 interface SurfaceActivationState {
@@ -63,6 +65,7 @@ interface SurfacePendingState {
   pendingAutoSwitchOnRelease: boolean;
   pendingOpenedAt: number;
   pendingReleaseKey: TabSwitcherReleaseKey | null;
+  pendingTabsSnapshot: PaletteTabsSnapshot | null;
   pendingClose: boolean;
   pendingSwitching: boolean;
   pendingCycles: number;
@@ -78,6 +81,7 @@ export interface OpenRequest {
   openedAt?: number;
   releaseKey?: TabSwitcherReleaseKey | null;
   cycles?: number;
+  tabsSnapshot?: PaletteTabsSnapshot | null;
 }
 
 export interface CreatedOverlayHost {

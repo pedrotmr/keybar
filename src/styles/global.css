@@ -33,7 +33,20 @@
   --cc-bar-width: 640px;
   --cc-bar-max-height: 520px;
   --cc-popup-width: 540px;
-  --cc-popup-height: 520px;
+  --cc-search-height: 56px;
+  --cc-row-height: 42px;
+  --cc-row-pitch: calc(var(--cc-row-height) + 4px);
+  --cc-results-list-pad: 10px;
+  /* Same visible row count for the empty expanded list and search results. */
+  --cc-visible-result-rows: 7;
+  --cc-results-body-height: calc(
+    (var(--cc-results-list-pad) * 2) + (var(--cc-visible-result-rows) * var(--cc-row-pitch))
+  );
+  --cc-popup-height: calc(var(--cc-search-height) + var(--cc-results-body-height));
+  /* Room for an in-flow notice under a full results list without clipping. */
+  --cc-notice-slot: 72px;
+  /* Settings keeps the taller fixed shell so the form isn't cramped. */
+  --cc-settings-popup-height: 520px;
   --cc-compact-popup-height: 56px;
   /* A small, consistent inset keeps Appearance controls off the frame. */
   --cc-settings-inset: 16px;
@@ -46,7 +59,8 @@
   --cc-bar-width: 760px;
   --cc-bar-max-height: 580px;
   --cc-popup-width: 620px;
-  --cc-popup-height: 560px;
+  --cc-visible-result-rows: 8;
+  --cc-settings-popup-height: 560px;
   --cc-settings-inset: 18px;
 }
 :root[data-size='wide'],
@@ -54,7 +68,8 @@
   --cc-bar-width: 900px;
   --cc-bar-max-height: 660px;
   --cc-popup-width: 760px;
-  --cc-popup-height: 600px;
+  --cc-visible-result-rows: 9;
+  --cc-settings-popup-height: 600px;
   --cc-settings-inset: 20px;
 }
 
@@ -98,11 +113,11 @@
 html,
 body,
 #root {
-  /* Give Chrome's action popup definite intrinsic bounds; percentage-only roots can collapse. */
+  /* Size to content up to the results max; avoid a fixed tall shell for empty provider states. */
   width: var(--cc-popup-width);
   min-width: 0;
   max-width: var(--cc-popup-width);
-  height: var(--cc-popup-height);
+  height: auto;
   max-height: var(--cc-popup-height);
   margin: 0;
 }
@@ -112,8 +127,8 @@ html[data-popup-window='fallback'] body,
 html[data-popup-window='fallback'] #root {
   width: min(var(--cc-popup-width), 100vw);
   max-width: 100vw;
-  height: min(var(--cc-popup-height), 100dvh);
-  max-height: 100dvh;
+  height: auto;
+  max-height: min(var(--cc-popup-height), 100dvh);
 }
 
 html,
@@ -137,21 +152,32 @@ body:has(.command-center.is-compact-empty),
 #root:has(.command-center.is-compact-empty) {
   height: var(--cc-compact-popup-height);
   min-height: var(--cc-compact-popup-height);
+  max-height: var(--cc-compact-popup-height);
 }
 
-html:has(.command-center.is-initial-expanded-view),
-body:has(.command-center.is-initial-expanded-view),
-#root:has(.command-center.is-initial-expanded-view) {
-  height: 398px;
-  min-height: 398px;
+/* Settings needs the full popup shell so the scrollable form isn't cramped. */
+html:has(.settings-view),
+body:has(.settings-view),
+#root:has(.settings-view) {
+  height: var(--cc-settings-popup-height);
+  min-height: var(--cc-settings-popup-height);
+  max-height: var(--cc-settings-popup-height);
 }
 
-/* Keep the same height while the dock is open so the expanded list never jumps smaller. */
-html:has(.command-center.is-initial-expanded-view.has-action-dock),
-body:has(.command-center.is-initial-expanded-view.has-action-dock),
-#root:has(.command-center.is-initial-expanded-view.has-action-dock) {
-  height: 398px;
-  min-height: 398px;
+/* Grow the content-sized shell when a notice is showing so it isn't clipped. */
+html:has(.notice-container.is-visible):not(:has(.settings-view)),
+body:has(.notice-container.is-visible):not(:has(.settings-view)),
+#root:has(.notice-container.is-visible):not(:has(.settings-view)) {
+  max-height: min(calc(var(--cc-popup-height) + var(--cc-notice-slot)), 100dvh);
+}
+
+/* Compact empty locks height to the search row; unlock it so an error toast remains visible. */
+html:has(.command-center.is-compact-empty):has(.notice-container.is-visible):not(:has(.settings-view)),
+body:has(.command-center.is-compact-empty):has(.notice-container.is-visible):not(:has(.settings-view)),
+#root:has(.command-center.is-compact-empty):has(.notice-container.is-visible):not(:has(.settings-view)) {
+  height: auto;
+  min-height: var(--cc-compact-popup-height);
+  max-height: min(calc(var(--cc-compact-popup-height) + var(--cc-notice-slot)), 100dvh);
 }
 
 .cc-root {
@@ -267,11 +293,9 @@ select:focus-visible {
   --cc-icon-col: 28px;
   --cc-row-gap: 12px;
   --cc-control: 30px;
-  --cc-search-height: 56px;
   --cc-query-size: calc(17px * var(--cc-font-scale));
   --cc-title-size: calc(14.5px * var(--cc-font-scale));
   --cc-detail-size: calc(12.5px * var(--cc-font-scale));
-  --cc-row-height: 42px;
   --cc-selection-border: color-mix(in srgb, var(--cc-accent) 26%, transparent);
   position: relative;
   display: flex;
@@ -539,11 +563,12 @@ kbd {
 .results-region {
   position: relative;
   min-height: 0;
-  flex: 1;
+  flex: 0 1 auto;
   overflow: hidden;
 }
 .results-list-scroll {
-  height: 100%;
+  height: auto;
+  max-height: var(--cc-results-body-height);
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-color: var(--cc-border-strong) transparent;
@@ -562,11 +587,11 @@ kbd {
 }
 .results-list-content {
   position: relative;
-  min-height: 100%;
+  min-height: 0;
 }
 .results-list {
-  min-height: 100%;
-  padding: 10px;
+  min-height: 0;
+  padding: var(--cc-results-list-pad);
 }
 .results-list-scroll:has(.results-list:empty) {
   display: none;
@@ -981,15 +1006,14 @@ mark {
 }
 
 .empty-state {
-  position: absolute;
-  inset: 0;
+  position: relative;
   display: flex;
-  min-height: 168px;
+  min-height: 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 24px;
+  padding: 28px 24px 32px;
   text-align: center;
 }
 .empty-state-icon {
@@ -1553,17 +1577,16 @@ mark {
   border: 0 !important;
 }
 .notice-container {
-  position: absolute;
+  /* Flow in the column when visible so content-sized popups grow instead of covering rows. */
   z-index: 4;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
   pointer-events: none;
 }
 .notice-container:not(.is-visible) {
+  position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
@@ -1572,6 +1595,8 @@ mark {
   white-space: nowrap;
 }
 .notice-container.is-visible {
+  position: relative;
+  margin: 0 12px 12px;
   padding: 8px 8px 8px 12px;
   border: 1px solid var(--cc-border-strong);
   border-radius: 10px;
@@ -1686,10 +1711,15 @@ mark {
   --cc-title-size: calc(15px * var(--cc-font-scale));
   --cc-detail-size: calc(13px * var(--cc-font-scale));
   --cc-row-height: 44px;
+  --cc-row-pitch: calc(var(--cc-row-height) + 4px);
+  --cc-results-body-height: calc(
+    (var(--cc-results-list-pad) * 2) + (var(--cc-visible-result-rows) * var(--cc-row-pitch))
+  );
   --cc-bar-available: min(var(--cc-bar-max-height), calc(100dvh - 48px));
+  --cc-overlay-expanded-max-height: calc(var(--cc-search-height) + var(--cc-results-body-height) + 2px);
   width: min(var(--cc-bar-width), calc(100vw - 48px));
   height: auto;
-  max-height: var(--cc-bar-available);
+  max-height: min(var(--cc-bar-available), var(--cc-overlay-expanded-max-height));
   min-height: 0;
   border: 1px solid var(--cc-border);
   border-radius: 18px;
@@ -1697,6 +1727,13 @@ mark {
   box-shadow: var(--cc-shadow);
   transform-origin: top center;
   animation: surface-in 140ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+.command-center.is-overlay-surface:has(.settings-view) {
+  height: var(--cc-bar-available);
+  max-height: var(--cc-bar-available);
+}
+.command-center.is-overlay-surface:has(.notice-container.is-visible):not(:has(.settings-view)) {
+  max-height: min(var(--cc-bar-available), calc(var(--cc-overlay-expanded-max-height) + var(--cc-notice-slot)));
 }
 /*
  * Pin the bar's top edge where a full-height bar would sit when centered, so Compact (search row only),
@@ -1711,11 +1748,7 @@ mark {
 }
 .command-center.is-overlay-surface .results-list-scroll {
   height: auto;
-  max-height: calc(var(--cc-bar-available) - var(--cc-search-height) - 2px);
-}
-.command-center.is-overlay-surface .empty-state {
-  position: relative;
-  inset: auto;
+  max-height: min(var(--cc-results-body-height), calc(var(--cc-bar-available) - var(--cc-search-height) - 2px));
 }
 .command-center.is-overlay-surface .settings-view {
   max-height: calc(var(--cc-bar-available) - 2px);

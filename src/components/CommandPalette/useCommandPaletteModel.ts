@@ -47,6 +47,7 @@ export const useCommandPaletteModel = ({
   onClose,
   themeRoot,
   cacheThemeInLocalStorage = true,
+  initialTabsSnapshot = null,
 }: CommandPaletteProps) => {
   const [mode, setMode] = useState<CommandPaletteMode>(initialMode);
   const [query, setQuery] = useState('');
@@ -68,7 +69,7 @@ export const useCommandPaletteModel = ({
   const [groupTargetId, setGroupTargetId] = useState('new');
   const [moveWindowId, setMoveWindowId] = useState('new');
 
-  const { preferences, viewport, updatePreferences } = usePaletteAppearance({
+  const { preferences, updatePreferences } = usePaletteAppearance({
     initialPreferences: initialTheme,
     themeRoot,
     cacheInLocalStorage: cacheThemeInLocalStorage,
@@ -131,7 +132,6 @@ export const useCommandPaletteModel = ({
 
   const {
     tabs,
-    tabsReady,
     currentTabId,
     currentWindowId,
     permissions,
@@ -140,7 +140,9 @@ export const useCommandPaletteModel = ({
     setGroups,
     splitCapabilities,
     refreshTabs,
-  } = usePaletteTabs({ surface, notify });
+    patchTab,
+    settleTabPatch,
+  } = usePaletteTabs({ surface, notify, initialTabsSnapshot });
 
   const { bookmarks, history, localDataLoading, localDataLoaded, loadLocalData } = useSavedPages(permissions, notify);
 
@@ -330,14 +332,10 @@ export const useCommandPaletteModel = ({
   const isUnfilteredExpandedView =
     mode === 'commands' && preferences.windowMode === 'expanded' && !query.trim() && !activeProvider;
 
-  const openingResultLimit = initialResultLimit(preferences.size, surface, viewport);
+  const openingResultLimit = initialResultLimit(preferences.size);
 
   const results = useMemo(() => {
     if (mode === 'commands' && preferences.windowMode === 'compact' && !query.trim() && !activeProvider) {
-      return [];
-    }
-
-    if (mode === 'commands' && !query.trim() && !activeProvider && !tabsReady) {
       return [];
     }
 
@@ -380,7 +378,6 @@ export const useCommandPaletteModel = ({
     providerCandidates,
     isStandaloneCanonicalProviderShortcut,
     localDataLoading,
-    tabsReady,
   ]);
 
   useEffect(() => {
@@ -390,9 +387,6 @@ export const useCommandPaletteModel = ({
   const activeIndex = Math.min(selectedIndex, Math.max(0, results.length - 1));
   const isCompactEmpty =
     mode === 'commands' && preferences.windowMode === 'compact' && !query.trim() && !activeProvider;
-
-  const isLoadingInitialTabs =
-    mode === 'commands' && preferences.windowMode === 'expanded' && !query.trim() && !activeProvider && !tabsReady;
 
   const showResults = mode === 'commands' && !isCompactEmpty;
   const selectedItem = showResults ? results[activeIndex] : undefined;
@@ -954,42 +948,86 @@ export const useCommandPaletteModel = ({
       }
 
       if (dialog.kind === 'rename') {
-        const result = await sendBackground('tabs:rename', {
-          tabId: dialog.tabId,
-          name: renameValue,
+        const tabId = dialog.tabId;
+        const nextName = renameValue.trim();
+        const previousTab = tabs.find((tab) => tab.id === tabId);
+        const previousCustomName = previousTab?.customName;
+        const previousOriginalTitle = previousTab?.originalTitle;
+
+        // Paint the row immediately. Strip injection stays inside tabs:rename so storage
+        // failure can roll the Chrome title back with the same transaction.
+        const renameToken = patchTab(tabId, {
+          customName: nextName || undefined,
+          originalTitle: nextName
+            ? (previousOriginalTitle ?? previousTab?.title ?? previousTab?.url)
+            : previousOriginalTitle,
         });
-        await refreshTabs();
-
-        if (!renameValue.trim()) {
-          if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
-            setDialogError(
-              result.stripReason === 'site-access-required'
-                ? 'Could not remove the custom title from Chrome’s tab strip. Approve access, then try again.'
-                : 'Could not remove the custom title from Chrome’s tab strip. Try again.',
-            );
-            return;
-          }
-
-          await closeDialog();
-          notify('Custom tab name removed.', 'success');
-          return;
-        }
-
         await closeDialog();
 
-        if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
-          notify(
-            result.record?.showInTabStrip
-              ? 'Chrome’s tab strip could not be updated. The previous custom title is still active.'
-              : result.stripReason === 'unsupported-page'
-                ? 'Tab name saved in Keybar. This page cannot show a custom title in Chrome’s tab strip.'
-                : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
-            result.record?.showInTabStrip ? 'error' : 'success',
-          );
-          return;
-        }
+        void sendBackground('tabs:rename', { tabId, name: renameValue })
+          .then((result) => {
+            if (!nextName) {
+              if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
+                settleTabPatch(
+                  tabId,
+                  { customName: previousCustomName, originalTitle: previousOriginalTitle },
+                  renameToken,
+                );
+                notify(
+                  result.stripReason === 'site-access-required'
+                    ? 'Could not remove the custom title from Chrome’s tab strip. Approve access, then try again.'
+                    : 'Could not remove the custom title from Chrome’s tab strip. Try again.',
+                );
+                return;
+              }
 
-        notify('Tab name saved.', 'success');
+              settleTabPatch(tabId, { customName: undefined, originalTitle: previousOriginalTitle }, renameToken);
+              notify('Custom tab name removed.', 'success');
+              return;
+            }
+
+            if (result.record) {
+              settleTabPatch(
+                tabId,
+                {
+                  customName: result.record.customName,
+                  originalTitle: result.record.originalTitle,
+                },
+                renameToken,
+              );
+            } else {
+              // Superseded or unchanged — keep the prior row values, not an empty name.
+              settleTabPatch(
+                tabId,
+                { customName: previousCustomName, originalTitle: previousOriginalTitle },
+                renameToken,
+              );
+              return;
+            }
+
+            if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
+              notify(
+                result.record.showInTabStrip
+                  ? 'Chrome’s tab strip could not be updated. The previous custom title is still active.'
+                  : result.stripReason === 'unsupported-page'
+                    ? 'Tab name saved in Keybar. This page cannot show a custom title in Chrome’s tab strip.'
+                    : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
+                result.record.showInTabStrip ? 'error' : 'success',
+              );
+              return;
+            }
+
+            notify('Tab name saved.', 'success');
+          })
+          .catch((error: unknown) => {
+            settleTabPatch(
+              tabId,
+              { customName: previousCustomName, originalTitle: previousOriginalTitle },
+              renameToken,
+            );
+            notify(error instanceof Error ? error.message : 'Could not rename that tab.');
+          });
+
         return;
       }
 
@@ -1046,10 +1084,14 @@ export const useCommandPaletteModel = ({
       return;
     }
 
+    const nextPinned = !tab.pinned;
+    const token = patchTab(tab.id, { pinned: nextPinned });
+
     try {
-      await sendBackground('tabs:pin', { tabId: tab.id, pinned: !tab.pinned });
-      await refreshTabs();
+      await sendBackground('tabs:pin', { tabId: tab.id, pinned: nextPinned });
+      settleTabPatch(tab.id, { pinned: nextPinned }, token);
     } catch (error) {
+      settleTabPatch(tab.id, { pinned: tab.pinned }, token);
       notify(error instanceof Error ? error.message : 'Could not change the pin state.');
     }
   };
@@ -1059,10 +1101,18 @@ export const useCommandPaletteModel = ({
       return;
     }
 
+    const nextMuted = !tab.mutedInfo?.muted;
+    const previousMutedInfo = tab.mutedInfo;
+    const nextMutedInfo = previousMutedInfo
+      ? { ...previousMutedInfo, muted: nextMuted }
+      : { muted: nextMuted, reason: 'user' as const };
+    const token = patchTab(tab.id, { mutedInfo: nextMutedInfo });
+
     try {
-      await sendBackground('tabs:mute', { tabId: tab.id, muted: !tab.mutedInfo?.muted });
-      await refreshTabs();
+      await sendBackground('tabs:mute', { tabId: tab.id, muted: nextMuted });
+      settleTabPatch(tab.id, { mutedInfo: nextMutedInfo }, token);
     } catch (error) {
+      settleTabPatch(tab.id, { mutedInfo: previousMutedInfo }, token);
       notify(error instanceof Error ? error.message : 'Could not change the audio state.');
     }
   };
@@ -1368,9 +1418,10 @@ export const useCommandPaletteModel = ({
       .catch((error) => notify(error instanceof Error ? error.message : 'Could not open keyboard shortcuts.'));
   };
 
-  const loadingState = isLoadingInitialTabs
-    ? { title: 'Loading your tabs', detail: 'Putting pinned tabs first.' }
-    : { title: 'Searching saved pages', detail: 'Checking bookmarks and recent history.' };
+  const loadingState = {
+    title: 'Searching saved pages',
+    detail: 'Checking bookmarks and recent history.',
+  };
 
   const actionDockItems = actionDock && actionDockTab && actionDockIndex >= 0 ? tabActionItems(actionDockTab) : [];
 
@@ -1395,7 +1446,6 @@ export const useCommandPaletteModel = ({
     activeIndex,
     keyboardNavigationVersion,
     localDataLoading,
-    isLoadingInitialTabs,
     emptyState,
     isUnfilteredExpandedView,
     isCompactEmpty,

@@ -14,6 +14,11 @@ import {
   installTabSwitcherKeyReleaseMonitorInPage,
   type TabSwitcherReleaseKey,
 } from '@/utils/tabSwitcherKeyRelease';
+import {
+  isPaletteTabsSnapshot,
+  PALETTE_TABS_SNAPSHOT_KEY,
+  type PaletteTabsSnapshot,
+} from '@/utils/paletteTabsSnapshot';
 import artifacts from '../../extension-artifacts.json';
 import {
   getBfcacheTitleDecision,
@@ -23,6 +28,7 @@ import {
   handleUpdatedTabName,
   duplicateTabWithName,
   renameTab,
+  setTabNamesChangeNotifier,
   tabNameSessionInitialization,
 } from './tabNames';
 
@@ -60,6 +66,12 @@ const overlayTabRegistry = new OverlayTabRegistry({
   notify: (tabId, message = { action: 'ui:tabs-changed' }) => chrome.tabs.sendMessage(tabId, message),
 });
 
+setTabNamesChangeNotifier(() => {
+  invalidatePaletteTabsSnapshot();
+  void chrome.runtime.sendMessage({ action: 'ui:tabs-changed' }).catch(() => undefined);
+  void overlayTabRegistry.broadcast().catch(() => undefined);
+});
+
 const tabSwitcherOpenWindows = new Set<number>();
 const tabSwitcherSurfaceByWindow = new Map<number, 'overlay' | 'popup'>();
 const tabSwitcherOpeningWindows = new Map<number, { tabId: number; pendingCycles: number; startedAt: number }>();
@@ -79,11 +91,30 @@ const typedBackgroundResult = <Action extends BackgroundAction>(
   result: NoInfer<BackgroundResult<Action>> | PromiseLike<NoInfer<BackgroundResult<Action>>>,
 ): Promise<BackgroundResult<Action>> => Promise.resolve(result);
 
+const readPaletteTabsSnapshot = async (): Promise<PaletteTabsSnapshot | undefined> => {
+  const storedSnapshot: Record<string, unknown> = await chrome.storage.session
+    .get(PALETTE_TABS_SNAPSHOT_KEY)
+    .catch(() => ({}));
+  return isPaletteTabsSnapshot(storedSnapshot[PALETTE_TABS_SNAPSHOT_KEY])
+    ? storedSnapshot[PALETTE_TABS_SNAPSHOT_KEY]
+    : undefined;
+};
+
 const normalizeError = (error: unknown): string => {
   return error instanceof Error ? error.message : 'The browser action failed.';
 };
 
+let paletteSnapshotWriteGeneration = 0;
+
+const invalidatePaletteTabsSnapshot = (): void => {
+  paletteSnapshotWriteGeneration += 1;
+  void chrome.storage.session.remove(PALETTE_TABS_SNAPSHOT_KEY).catch(() => undefined);
+};
+
 const broadcastTabChanges = (): void => {
+  // Invalidate immediately so a reopen during the debounce cannot paint a stale snapshot.
+  invalidatePaletteTabsSnapshot();
+
   if (tabChangeBroadcastTimer) {
     clearTimeout(tabChangeBroadcastTimer);
   }
@@ -149,7 +180,9 @@ const openOverlay = async (
   }
 
   await chrome.action.setPopup({ tabId, popup: '' });
-  const request = { action: 'overlay:open', mode, autoSwitchOnRelease, openedAt, releaseKey };
+  // Prefer a cached snapshot only when present; otherwise listTabs retries until stable.
+  const tabsSnapshot = (await readPaletteTabsSnapshot()) ?? (await listTabs());
+  const request = { action: 'overlay:open', mode, autoSwitchOnRelease, openedAt, releaseKey, tabsSnapshot };
 
   try {
     const response = (await chrome.tabs.sendMessage(tabId, request)) as { success?: boolean } | undefined;
@@ -471,7 +504,7 @@ const listRecentTabs = async (): Promise<Array<SplitAwareTab & { customName?: st
     return [];
   }
 
-  const tabs = await listTabs();
+  const { tabs } = await listTabs();
   return tabs
     .filter((tab) => tab.windowId === current.windowId)
     .sort((a, b) => Number(b.active) - Number(a.active) || (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))
@@ -529,6 +562,14 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.windows.onRemoved?.addListener((windowId) => {
   void clearTabSwitcher(windowId).catch(() => undefined);
   tabPreviewCaptureAt.delete(windowId);
+});
+chrome.windows.onFocusChanged?.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    return;
+  }
+
+  // Focused window drives currentTabId in the warm snapshot.
+  broadcastTabChanges();
 });
 chrome.tabs.onUpdated.addListener((_tabId, changes) => {
   if (
@@ -609,12 +650,10 @@ const handleRequest = async (
   const message = validateRequest(rawMessage, sender, chrome.runtime.id);
   const action = message.action;
 
-  if (
-    action === 'tabs:list' ||
-    action === 'tabs:recent' ||
-    action === 'tabs:rename' ||
-    action === 'tabs:duplicate-active'
-  ) {
+  // Rename/duplicate need session name state. Listing must stay fast so pinned tabs
+  // can paint without waiting on strip-title reinjection or first-session reconcile.
+  // Strip-title inject/clear stays unblocked so Chrome's tab title can update immediately.
+  if (action === 'tabs:rename' || action === 'tabs:duplicate-active') {
     await tabNameSessionInitialization;
   }
 
@@ -1147,21 +1186,23 @@ const setActiveTabZoom = async (action: string): Promise<boolean> => {
   return true;
 };
 
-const listTabs = async (): Promise<
-  Array<
-    SplitAwareTab & {
-      customName?: string;
-      originalTitle?: string;
-      windowTitle?: string;
-    }
-  >
-> => {
+const listTabsOnce = async (): Promise<{ snapshot: PaletteTabsSnapshot; writeGeneration: number }> => {
+  const writeGeneration = paletteSnapshotWriteGeneration;
   const [tabs, windows, names, focusedWindow] = await Promise.all([
     chrome.tabs.query({}),
     chrome.windows.getAll({ windowTypes: ['normal'] }),
     getTabNames(),
-    chrome.windows.getLastFocused(),
+    chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => undefined),
   ]);
+
+  const focusedWindowId = focusedWindow?.id;
+  // Capture current before filtering out Keybar pages so rename-current stays anchored.
+  const focusedRaw =
+    (typeof focusedWindowId === 'number'
+      ? tabs.find((tab) => tab.active && tab.windowId === focusedWindowId)
+      : undefined) ?? tabs.find((tab) => tab.active);
+  const currentTabId = focusedRaw?.id ?? null;
+  const currentWindowId = focusedRaw?.windowId ?? (typeof focusedWindowId === 'number' ? focusedWindowId : null);
 
   const windowTitles = new Map(
     windows.flatMap((window, index) => {
@@ -1175,7 +1216,7 @@ const listTabs = async (): Promise<
     }),
   );
 
-  return tabs
+  const listed = tabs
     .filter(
       (tab) =>
         tab.id !== undefined &&
@@ -1193,10 +1234,41 @@ const listTabs = async (): Promise<
     })
     .sort(
       (a, b) =>
-        Number(b.active && b.windowId === focusedWindow.id) - Number(a.active && a.windowId === focusedWindow.id) ||
+        Number(b.active && b.windowId === focusedWindowId) - Number(a.active && a.windowId === focusedWindowId) ||
         (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0),
     );
+
+  return {
+    writeGeneration,
+    snapshot: {
+      tabs: listed,
+      currentTabId,
+      currentWindowId,
+    } satisfies PaletteTabsSnapshot,
+  };
 };
+
+/** Returns a snapshot that survived invalidation, so overlay first paint cannot be stale mid-flight. */
+const listTabs = async (): Promise<PaletteTabsSnapshot> => {
+  let last: PaletteTabsSnapshot | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { snapshot, writeGeneration } = await listTabsOnce();
+    last = snapshot;
+
+    if (writeGeneration === paletteSnapshotWriteGeneration) {
+      void chrome.storage.session.set({ [PALETTE_TABS_SNAPSHOT_KEY]: snapshot }).catch(() => undefined);
+      return snapshot;
+    }
+  }
+
+  return last!;
+};
+
+// Warm the overlay/popup snapshot after session name init so the first open is not empty.
+void tabNameSessionInitialization.finally(() => {
+  void listTabs().catch(() => undefined);
+});
 
 const activateTab = async (tabId: number, sourceTabId?: number): Promise<boolean> => {
   const tab = await chrome.tabs.get(tabId);

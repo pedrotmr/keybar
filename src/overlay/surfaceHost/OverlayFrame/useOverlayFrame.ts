@@ -4,6 +4,7 @@ import type { ThemePreferences } from '@/types';
 import { loadProductFontForPage } from '@/utils/installProductFont';
 import { wasTabSwitcherModifierReleasedAfter } from '@/utils/tabSwitcherKeyRelease';
 import type { TabSwitcherReleaseKey } from '@/utils/tabSwitcherKeyRelease';
+import type { PaletteTabsSnapshot } from '@/utils/paletteTabsSnapshot';
 import { hideHost, setPageInert, showHost } from '../host';
 import type { SurfaceController } from '../types';
 
@@ -16,6 +17,7 @@ interface OverlayFrameState {
   modifierReleasedAtOpen: boolean;
   releaseKey: TabSwitcherReleaseKey | null;
   cycleVersion: number;
+  tabsSnapshot: PaletteTabsSnapshot | null;
 }
 
 export const useOverlayFrame = (controller: SurfaceController): OverlayFrameState => {
@@ -28,6 +30,7 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
   const [modifierReleasedAtOpen, setModifierReleasedAtOpen] = useState(false);
   const [releaseKey, setReleaseKey] = useState<TabSwitcherReleaseKey | null>(null);
   const [cycleVersion, setCycleVersion] = useState(0);
+  const [tabsSnapshot, setTabsSnapshot] = useState<PaletteTabsSnapshot | null>(null);
 
   const isOpenRef = useRef(false);
   const openRequestVersion = useRef(0);
@@ -89,6 +92,8 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
       setAutoSwitchOnRelease(shouldAutoSwitchOnRelease);
       setOpenedAt(launchTime);
       setReleaseKey(requestReleaseKey);
+      setTabsSnapshot(controller.bridge.pendingTabsSnapshot);
+      controller.bridge.pendingTabsSnapshot = null;
       setModifierReleasedAtOpen(
         shouldAutoSwitchOnRelease && wasTabSwitcherModifierReleasedAfter(launchTime, requestReleaseKey),
       );
@@ -208,5 +213,6 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
     modifierReleasedAtOpen,
     releaseKey,
     cycleVersion,
+    tabsSnapshot,
   };
 };

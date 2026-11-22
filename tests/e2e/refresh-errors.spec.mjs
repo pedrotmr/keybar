@@ -22,7 +22,11 @@ test('an old refresh failure cannot replace a newer successful tab list', async 
           });
         return {
           success: true,
-          data: [{ id: 71, windowId: 1, index: 0, title: 'Fresh Quasar', url: 'https://fresh.test/' }],
+          data: {
+            tabs: [{ id: 71, windowId: 1, index: 0, title: 'Fresh Quasar', url: 'https://fresh.test/', active: true }],
+            currentTabId: 71,
+            currentWindowId: 1,
+          },
         };
       }
       return send(message, ...args);
