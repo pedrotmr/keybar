@@ -80,6 +80,29 @@ const isCurrentStripGeneration = (tabId: number, generation: number): boolean =>
   currentStripGeneration(tabId) === generation;
 
 /**
+ * A superseded inject may have overwritten a newer rename/clear. Force-clear the
+ * page override, then reinstall whatever strip name storage currently owns.
+ */
+const repairSupersededStripApply = async (
+  tabId: number,
+  appliedOriginalTitle: string,
+  appliedOrigin: string,
+): Promise<void> => {
+  await restorePageTitleOverride(tabId, appliedOriginalTitle, '', appliedOrigin, {
+    requireNameMatch: false,
+  }).catch(() => undefined);
+
+  const stored = await chrome.storage.local.get(localKey);
+  const saved = normalizeTabNames(stored[localKey])[String(tabId)];
+
+  if (!saved?.showInTabStrip || !saved.tabStripOrigin) {
+    return;
+  }
+
+  await applyPageTitleOverride(tabId, saved.customName, saved.tabStripOrigin).catch(() => undefined);
+};
+
+/**
  * Re-inject strip titles without occupying the name-mutation queue. Rename/list
  * must not wait on executeScript across every renamed tab.
  */
@@ -94,7 +117,12 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
   }
 
   void (async () => {
-    const originalTitleUpdates: Array<{ tabId: number; originalTitle: string; customName: string }> = [];
+    const originalTitleUpdates: Array<{
+      tabId: number;
+      originalTitle: string;
+      customName: string;
+      generation: number;
+    }> = [];
 
     await Promise.all(
       targets.map(async (name) => {
@@ -112,12 +140,7 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
 
           if (!isCurrentStripGeneration(name.tabId, generation)) {
             if (applied.success) {
-              await restorePageTitleOverride(
-                name.tabId,
-                applied.originalTitle,
-                name.customName,
-                name.tabStripOrigin!,
-              ).catch(() => undefined);
+              await repairSupersededStripApply(name.tabId, applied.originalTitle, name.tabStripOrigin!);
             }
             return;
           }
@@ -127,6 +150,7 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
               tabId: name.tabId,
               originalTitle: applied.originalTitle,
               customName: name.customName,
+              generation,
             });
           }
         } catch {
@@ -143,6 +167,10 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
       let changed = false;
 
       for (const update of originalTitleUpdates) {
+        if (!isCurrentStripGeneration(update.tabId, update.generation)) {
+          continue;
+        }
+
         const entry = fresh[String(update.tabId)];
 
         if (entry && entry.customName === update.customName && entry.originalTitle !== update.originalTitle) {
@@ -172,7 +200,7 @@ const applyStripTitleInBackground = (
 
     if (!isCurrentStripGeneration(tabId, generation)) {
       if (applied.success) {
-        await restorePageTitleOverride(tabId, applied.originalTitle, customName, origin).catch(() => undefined);
+        await repairSupersededStripApply(tabId, applied.originalTitle, origin);
       }
       return;
     }
