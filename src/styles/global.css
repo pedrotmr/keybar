@@ -43,6 +43,8 @@
     (var(--cc-results-list-pad) * 2) + (var(--cc-visible-result-rows) * var(--cc-row-pitch))
   );
   --cc-popup-height: calc(var(--cc-search-height) + var(--cc-results-body-height));
+  /* Room for an in-flow notice under a full results list without clipping. */
+  --cc-notice-slot: 72px;
   /* Settings keeps the taller fixed shell so the form isn't cramped. */
   --cc-settings-popup-height: 520px;
   --cc-compact-popup-height: 56px;
@@ -160,6 +162,13 @@ body:has(.settings-view),
   height: var(--cc-settings-popup-height);
   min-height: var(--cc-settings-popup-height);
   max-height: var(--cc-settings-popup-height);
+}
+
+/* Grow the content-sized shell when a notice is showing so it isn't clipped. */
+html:has(.notice-container.is-visible):not(:has(.settings-view)),
+body:has(.notice-container.is-visible):not(:has(.settings-view)),
+#root:has(.notice-container.is-visible):not(:has(.settings-view)) {
+  max-height: calc(var(--cc-popup-height) + var(--cc-notice-slot));
 }
 
 .cc-root {
@@ -1713,6 +1722,9 @@ mark {
 .command-center.is-overlay-surface:has(.settings-view) {
   height: var(--cc-bar-available);
   max-height: var(--cc-bar-available);
+}
+.command-center.is-overlay-surface:has(.notice-container.is-visible):not(:has(.settings-view)) {
+  max-height: min(var(--cc-bar-available), calc(var(--cc-overlay-expanded-max-height) + var(--cc-notice-slot)));
 }
 /*
  * Pin the bar's top edge where a full-height bar would sit when centered, so Compact (search row only),
