@@ -2,12 +2,7 @@ import type { KeyboardEvent } from 'react';
 import type { BookmarkItem, CommandBarSize, HistoryItem, PaletteItem } from '@/types';
 import { searchItems, searchProviderItems } from '@/utils/fuzzySearch';
 import type { ResultsEmptyState } from '../ResultsList/types';
-import type {
-  FlowDialog,
-  ToastMessage,
-  WindowWithCommandCenterTimings,
-  CommandPaletteMode,
-} from './types';
+import type { FlowDialog, ToastMessage, WindowWithCommandCenterTimings, CommandPaletteMode } from './types';
 import type { SearchProviderDefinition } from '@/utils/searchProviders';
 import type { BulkCloseAction } from '@/utils/bulkClose';
 

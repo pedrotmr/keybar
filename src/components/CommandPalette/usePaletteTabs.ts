@@ -105,15 +105,18 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
     });
   }, []);
 
-  const paintOptimistic = useCallback((nextTabs: ManagedTab[], currentTabIdValue: number | null, windowId: number | null) => {
-    if (hasLiveTabs.current || !nextTabs.length) {
-      return;
-    }
+  const paintOptimistic = useCallback(
+    (nextTabs: ManagedTab[], currentTabIdValue: number | null, windowId: number | null) => {
+      if (hasLiveTabs.current || !nextTabs.length) {
+        return;
+      }
 
-    setTabs(mergePending(nextTabs));
-    setCurrentTabId(currentTabIdValue);
-    setCurrentWindowId(windowId);
-  }, [mergePending]);
+      setTabs(mergePending(nextTabs));
+      setCurrentTabId(currentTabIdValue);
+      setCurrentWindowId(windowId);
+    },
+    [mergePending],
+  );
 
   const ensureCaps = useCallback(async (requestVersion: number): Promise<boolean> => {
     if (groupsAllowed.current !== null && splitSupport.current !== null) {
@@ -313,9 +316,7 @@ export const usePaletteTabs = ({ surface, notify, initialTabsSnapshot = null }: 
       const storedNames = sessionMarker[TAB_NAME_SESSION_KEY]
         ? await chrome.storage.local.get(TAB_NAMES_STORAGE_KEY)
         : {};
-      const names = sessionMarker[TAB_NAME_SESSION_KEY]
-        ? normalizeTabNames(storedNames[TAB_NAMES_STORAGE_KEY])
-        : {};
+      const names = sessionMarker[TAB_NAME_SESSION_KEY] ? normalizeTabNames(storedNames[TAB_NAMES_STORAGE_KEY]) : {};
       const optimistic = toOptimisticManagedTabs(queried, names);
       const focusedWindowId = focusedWindow?.id;
       const active =

@@ -1202,8 +1202,7 @@ const listTabsOnce = async (): Promise<{ snapshot: PaletteTabsSnapshot; writeGen
       ? tabs.find((tab) => tab.active && tab.windowId === focusedWindowId)
       : undefined) ?? tabs.find((tab) => tab.active);
   const currentTabId = focusedRaw?.id ?? null;
-  const currentWindowId =
-    focusedRaw?.windowId ?? (typeof focusedWindowId === 'number' ? focusedWindowId : null);
+  const currentWindowId = focusedRaw?.windowId ?? (typeof focusedWindowId === 'number' ? focusedWindowId : null);
 
   const windowTitles = new Map(
     windows.flatMap((window, index) => {

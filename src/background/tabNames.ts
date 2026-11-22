@@ -84,8 +84,9 @@ const isCurrentStripGeneration = (tabId: number, generation: number): boolean =>
  * must not wait on executeScript across every renamed tab.
  */
 const scheduleStripTitleReapply = (names: TabNameMap): void => {
-  const targets = Object.values(names).filter(
-    (name) => name.showInTabStrip && name.tabStripOrigin && !isStaleKey(String(name.tabId)),
+  // Filter by map key so `stale:` records never reinject into a reused tab ID.
+  const targets = Object.entries(names).flatMap(([key, name]) =>
+    !isStaleKey(key) && name.showInTabStrip && name.tabStripOrigin ? [name] : [],
   );
 
   if (!targets.length) {
@@ -93,7 +94,7 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
   }
 
   void (async () => {
-    const originalTitleUpdates: Array<{ tabId: number; originalTitle: string }> = [];
+    const originalTitleUpdates: Array<{ tabId: number; originalTitle: string; customName: string }> = [];
 
     await Promise.all(
       targets.map(async (name) => {
@@ -109,12 +110,24 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
 
           const applied = await applyPageTitleOverride(name.tabId, name.customName, name.tabStripOrigin!);
 
-          if (
-            applied.success &&
-            applied.originalTitle !== name.originalTitle &&
-            isCurrentStripGeneration(name.tabId, generation)
-          ) {
-            originalTitleUpdates.push({ tabId: name.tabId, originalTitle: applied.originalTitle });
+          if (!isCurrentStripGeneration(name.tabId, generation)) {
+            if (applied.success) {
+              await restorePageTitleOverride(
+                name.tabId,
+                applied.originalTitle,
+                name.customName,
+                name.tabStripOrigin!,
+              ).catch(() => undefined);
+            }
+            return;
+          }
+
+          if (applied.success && applied.originalTitle !== name.originalTitle) {
+            originalTitleUpdates.push({
+              tabId: name.tabId,
+              originalTitle: applied.originalTitle,
+              customName: name.customName,
+            });
           }
         } catch {
           // Tab may be gone or injection unavailable.
@@ -132,7 +145,7 @@ const scheduleStripTitleReapply = (names: TabNameMap): void => {
       for (const update of originalTitleUpdates) {
         const entry = fresh[String(update.tabId)];
 
-        if (entry && entry.originalTitle !== update.originalTitle) {
+        if (entry && entry.customName === update.customName && entry.originalTitle !== update.originalTitle) {
           entry.originalTitle = update.originalTitle;
           changed = true;
         }
@@ -158,6 +171,9 @@ const applyStripTitleInBackground = (
     const applied = await applyPageTitleOverride(tabId, customName, origin);
 
     if (!isCurrentStripGeneration(tabId, generation)) {
+      if (applied.success) {
+        await restorePageTitleOverride(tabId, applied.originalTitle, customName, origin).catch(() => undefined);
+      }
       return;
     }
 

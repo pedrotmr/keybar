@@ -996,17 +996,23 @@ export const useCommandPaletteModel = ({
                 renameToken,
               );
             } else {
-              settleTabPatch(tabId, { customName: undefined, originalTitle: previousOriginalTitle }, renameToken);
+              // Superseded or unchanged — keep the prior row values, not an empty name.
+              settleTabPatch(
+                tabId,
+                { customName: previousCustomName, originalTitle: previousOriginalTitle },
+                renameToken,
+              );
+              return;
             }
 
             if (result.stripStatus === 'denied' || result.stripStatus === 'unavailable') {
               notify(
-                result.record?.showInTabStrip
+                result.record.showInTabStrip
                   ? 'Chrome’s tab strip could not be updated. The previous custom title is still active.'
                   : result.stripReason === 'unsupported-page'
                     ? 'Tab name saved in Keybar. This page cannot show a custom title in Chrome’s tab strip.'
                     : 'Tab name saved in Keybar. Chrome’s tab strip could not be updated on this page.',
-                result.record?.showInTabStrip ? 'error' : 'success',
+                result.record.showInTabStrip ? 'error' : 'success',
               );
               return;
             }
