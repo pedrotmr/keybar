@@ -43,6 +43,8 @@
     (var(--cc-results-list-pad) * 2) + (var(--cc-visible-result-rows) * var(--cc-row-pitch))
   );
   --cc-popup-height: calc(var(--cc-search-height) + var(--cc-results-body-height));
+  /* Settings keeps the taller fixed shell so the form isn't cramped. */
+  --cc-settings-popup-height: 520px;
   --cc-compact-popup-height: 56px;
   /* A small, consistent inset keeps Appearance controls off the frame. */
   --cc-settings-inset: 16px;
@@ -56,6 +58,7 @@
   --cc-bar-max-height: 580px;
   --cc-popup-width: 620px;
   --cc-visible-result-rows: 8;
+  --cc-settings-popup-height: 560px;
   --cc-settings-inset: 18px;
 }
 :root[data-size='wide'],
@@ -64,6 +67,7 @@
   --cc-bar-max-height: 660px;
   --cc-popup-width: 760px;
   --cc-visible-result-rows: 9;
+  --cc-settings-popup-height: 600px;
   --cc-settings-inset: 20px;
 }
 
@@ -153,9 +157,9 @@ body:has(.command-center.is-compact-empty),
 html:has(.settings-view),
 body:has(.settings-view),
 #root:has(.settings-view) {
-  height: var(--cc-popup-height);
-  min-height: var(--cc-popup-height);
-  max-height: var(--cc-popup-height);
+  height: var(--cc-settings-popup-height);
+  min-height: var(--cc-settings-popup-height);
+  max-height: var(--cc-settings-popup-height);
 }
 
 .cc-root {
@@ -1555,17 +1559,16 @@ mark {
   border: 0 !important;
 }
 .notice-container {
-  position: absolute;
+  /* Flow in the column when visible so content-sized popups grow instead of covering rows. */
   z-index: 4;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
   pointer-events: none;
 }
 .notice-container:not(.is-visible) {
+  position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
@@ -1574,6 +1577,8 @@ mark {
   white-space: nowrap;
 }
 .notice-container.is-visible {
+  position: relative;
+  margin: 0 12px 12px;
   padding: 8px 8px 8px 12px;
   border: 1px solid var(--cc-border-strong);
   border-radius: 10px;
