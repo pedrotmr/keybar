@@ -168,7 +168,16 @@ body:has(.settings-view),
 html:has(.notice-container.is-visible):not(:has(.settings-view)),
 body:has(.notice-container.is-visible):not(:has(.settings-view)),
 #root:has(.notice-container.is-visible):not(:has(.settings-view)) {
-  max-height: calc(var(--cc-popup-height) + var(--cc-notice-slot));
+  max-height: min(calc(var(--cc-popup-height) + var(--cc-notice-slot)), 100dvh);
+}
+
+/* Compact empty locks height to the search row; unlock it so an error toast remains visible. */
+html:has(.command-center.is-compact-empty):has(.notice-container.is-visible):not(:has(.settings-view)),
+body:has(.command-center.is-compact-empty):has(.notice-container.is-visible):not(:has(.settings-view)),
+#root:has(.command-center.is-compact-empty):has(.notice-container.is-visible):not(:has(.settings-view)) {
+  height: auto;
+  min-height: var(--cc-compact-popup-height);
+  max-height: min(calc(var(--cc-compact-popup-height) + var(--cc-notice-slot)), 100dvh);
 }
 
 .cc-root {
