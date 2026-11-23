@@ -1,5 +1,7 @@
 # Tab title rename prototype
 
+> **Historical:** This prototype is a research fixture only. Production Keybar already ships tab-strip renaming (issue [#40](https://github.com/pedrotmr/keybar/issues/40), PR [#53](https://github.com/pedrotmr/keybar/pull/53)). Do not treat this folder as the current implementation.
+
 This isolated Manifest V3 prototype tests changing a regular page's `document.title` and restoring its original title. It is not included in Keybar's build. Production Keybar now ships required HTTP(S) host permissions for the same feature (issue #40).
 
 The popup resolves the current tab when opened, requests access to only that tab's origin after the user chooses **Allow this site and apply**, and stores the original title. It overrides later SPA title changes and reapplies the custom name after same-origin reloads and navigations. **Restore page title** restores the captured title only when the tab is still on the saved origin and the page is actively displaying this prototype's override.

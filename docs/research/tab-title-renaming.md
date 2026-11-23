@@ -1,5 +1,9 @@
 # Making custom names appear in Chrome's tab strip
 
+- **Date:** 7 November 2026 (research); implemented 20 November 2026
+- **Issue:** [#40](https://github.com/pedrotmr/keybar/issues/40) (research: [#31](https://github.com/pedrotmr/keybar/issues/31)); PR [#53](https://github.com/pedrotmr/keybar/pull/53)
+- **Status:** implementado — custom names appear in Chrome's tab strip
+
 > **Implementation note:** The branch for issue [#40](https://github.com/pedrotmr/keybar/issues/40) implements required HTTP(S) `host_permissions` (Tab Renamer model), not the optional/activeTab-only path researched below. Keep this note as investigation history.
 
 ## Recommendation

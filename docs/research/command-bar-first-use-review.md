@@ -1,5 +1,9 @@
 # Command Bar first-use review
 
+- **Date:** 6 November 2026 (review); implemented 18 November 2026
+- **Issue:** [#26](https://github.com/pedrotmr/keybar/issues/26) (review: [#21](https://github.com/pedrotmr/keybar/issues/21)); PR [#48](https://github.com/pedrotmr/keybar/pull/48)
+- **Status:** implementado — first-use shortcut guidance shipped
+
 **Reviewed:** November 6, 2026 · **Scope:** first-use discoverability, local search, provider handoff, and optional saved-page permissions.
 
 ## Code-backed findings

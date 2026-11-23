@@ -48,3 +48,14 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 - **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (see **Count open blockers**, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
 - **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
 - **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+
+## Research issues and product decisions
+
+A research issue is finished when the research artifact (usually a doc under `docs/research/`) is in the repo and the ticket is labelled `ready-for-human`. **Leave the issue open** until Pedro makes a product decision.
+
+- Do not close the research issue before that decision, and do not treat the research ticket itself as the implementation ticket.
+- If Pedro approves implementation, create a **new** issue labelled `ready-for-agent` for the implementation work, and link it to the research issue.
+- If Pedro decides not to proceed, close the research issue with a comment that records the decision.
+- Record the decision in the research doc's status block (`decidido`, `pendente`, or `implementado`) and in [docs/README.md](../README.md).
+
+This avoids closing research as done when the product call is still outstanding, which happened with issues #24 and #29.
