@@ -1,5 +1,9 @@
 # Searchable recently closed tabs: product decision
 
+- **Date:** 19 November 2026 (research); decided 23 November 2026
+- **Issue:** [#28](https://github.com/pedrotmr/keybar/issues/28)
+- **Status:** decidido — do not build searchable recently-closed tabs
+
 **Updated:** 19 November 2026
 **Scope:** Evidence-based recommendation for [issue #28](https://github.com/pedrotmr/keybar/issues/28). This is a decision artifact, not an implementation.
 

@@ -1,14 +1,20 @@
 # Chrome Web Store listing
 
-## Name
+The canonical Store listing copy, artwork, screenshot captions, and privacy-practices answers live in the [Chrome Web Store launch kit](launch/chrome-web-store.md). Use that document when preparing or updating the listing.
+
+The draft below is an earlier, shorter version of the name and description. It is kept only so that wording is not lost; it is not the listing to submit.
+
+## Earlier draft copy
+
+### Name
 
 Keybar
 
-## Short description
+### Short description
 
 Find open tabs and run browser actions from a keyboard-first command bar.
 
-## Full description
+### Full description
 
 Keybar helps you find a page or take a browser action without hunting through menus. Open the command bar with a keyboard shortcut, then search open tabs, browser actions, addresses, and provider shortcuts from one focused surface.
 
@@ -16,7 +22,9 @@ Use the separate Tab Switcher to move through recent tabs. Rename, pin, mute, gr
 
 Keybar works on regular web pages and uses Chrome's extension popup on Chrome and extension pages, where Chrome does not allow page overlays. Shortcuts can be changed at `chrome://extensions/shortcuts`.
 
-## Artwork sources
+### Artwork sources
+
+These paths are also listed in the [launch kit](launch/chrome-web-store.md).
 
 - High-resolution PNG: [`assets/branding/Keybar.png`](../assets/branding/Keybar.png)
 - Editable Icon Composer source: [`assets/branding/Keybar.icon`](../assets/branding/Keybar.icon)

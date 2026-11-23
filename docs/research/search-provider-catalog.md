@@ -1,6 +1,10 @@
 # Search provider catalog and first-release shortlist
 
-**Research snapshot:** 6 November 2026 · **Status:** decision support; no product integrations are proposed by this document.
+- **Date:** 6 November 2026 (research); Maps approved 18 November 2026; catalog decision 23 November 2026
+- **Issue:** [#29](https://github.com/pedrotmr/keybar/issues/29); implementation issue a abrir
+- **Status:** decidido — drop the first-release shortlist approach; ship a large configurable provider catalog (URL, prefixes, conflict detection, enable/disable). Implementation issue a abrir
+
+**Research snapshot:** 6 November 2026. This document remains decision support; it does not itself add product integrations.
 
 ## Scope and reading guide
 

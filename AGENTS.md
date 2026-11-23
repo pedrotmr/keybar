@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues live in GitHub Issues for `pedrotmr/keybar`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues for `pedrotmr/keybar`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`. Research issues finish as `ready-for-human` and stay open until Pedro decides; approved work becomes a new `ready-for-agent` issue.
 
 ### Triage labels
 
