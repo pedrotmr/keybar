@@ -19,7 +19,7 @@
 
 ## Research
 
-- [AI tab organizer](research/ai-tab-organizer.md) — **pendente**; research and local prototype are frozen until Chrome Web Store publication; related issues #36 and #37.
+- [AI tab organizer](research/ai-tab-organizer.md) — **pendente**; frozen on 23 November 2026 until Chrome Web Store publication; related issues #36 and #37.
 - [Command Bar first-use review](research/command-bar-first-use-review.md) — **implementado** in PR #48 / issue #26; review issue #21.
 - [Command Bar relevance evaluation](research/command-bar-relevance-evaluation.md) — **decidido**; issue #22 is concluded, and cold-start performance follow-up #55 also covers concluded baselines from #23.
 - [Competitive analysis](research/competitive-analysis.md) — **decidido**; reference research related to parent issue #20, with no dedicated research issue or pending product decision.

@@ -37,7 +37,7 @@ The API cap is a real product limit: it is 25 **sessions**, not a promise of 25 
 
 QuicKey includes closed-tab search, but the local samples do not show repeated direct requests for this feature. One QuicKey review complains that a closed tab found in search opens in a new window; one Quick Tab Switch review praises recognizing closed tabs. Neither asks for a searchable recent-closed list. ([QuicKey sample](competitor-reviews/quickey.json#L21), [Quick Tab Switch sample](competitor-reviews/quick-tab-switch.json#L12)) One Tab Manager Plus review does ask to search tabs in closed windows, but its context is named, saved-window management; it is adjacent evidence, not a request for a short-lived recently closed list. ([Tab Manager Plus sample](competitor-reviews/tab-manager-plus.json#L25))
 
-The full sample covers 602 selected English reviews across 26 extensions, gathered from Recent and Helpful sorts. It is neither representative nor a measure of demand for Keybar. Session-backup and lost-data requests in tab managers describe a different, durable recovery job and should not be used to justify archives, sync, or workspaces. ([sample limits](competitive-analysis.md#L74), [parent issue #20 scope](https://github.com/pedrotmr/keybar/issues/20))
+The full sample covers 602 selected English reviews across 26 extensions, gathered from Recent and Helpful sorts. It is neither representative nor a measure of demand for Keybar. Session-backup and lost-data requests in tab managers describe a different, durable recovery job and should not be used to justify archives, sync, or workspaces. ([sample limits](competitive-analysis.md#data-quality-and-limits), [parent issue #20 scope](https://github.com/pedrotmr/keybar/issues/20))
 
 ## Synthetic comparison
 
