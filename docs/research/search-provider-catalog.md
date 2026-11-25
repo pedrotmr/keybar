@@ -1,8 +1,8 @@
 # Search provider catalog and first-release shortlist
 
 - **Date:** 6 November 2026 (research snapshot); 23 November 2026 (decision)
-- **Issue:** [#29](https://github.com/pedrotmr/keybar/issues/29); implementation issue a abrir.
-- **Status:** decidido — open a new issue for a large configurable provider catalog with URL templates, prefixes, conflict detection, and enable/disable controls.
+- **Issue:** [#29](https://github.com/pedrotmr/keybar/issues/29); implementation issue [#57](https://github.com/pedrotmr/keybar/issues/57), opened 23 November 2026.
+- **Status:** decidido — the outcome was “issue a abrir” for a large configurable provider catalog with URL templates, prefixes, conflict detection, and enable/disable controls; implementation is now tracked in #57.
 
 **Research snapshot:** 6 November 2026 · **Status:** decision support; no product integrations are proposed by this document.
 
