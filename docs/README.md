@@ -19,14 +19,14 @@
 
 ## Research
 
-- [AI tab organizer](research/ai-tab-organizer.md) — **pending**; research and local prototype are frozen until Chrome Web Store publication; related issues #36 and #37.
-- [Command Bar first-use review](research/command-bar-first-use-review.md) — **implemented** in PR #48 / issue #26; review issue #21.
-- [Command Bar relevance evaluation](research/command-bar-relevance-evaluation.md) — **decided**; issue #22 is concluded, and performance follow-up #55 also covers concluded baselines from #23.
-- [Competitive analysis](research/competitive-analysis.md) — reference research; no matching issue or pending product decision.
-- [Recently closed tabs evaluation](research/recently-closed-tabs-evaluation.md) — **decided** on 23 November 2026: do not build searchable recently closed tabs (issue #28).
-- [Search provider catalog](research/search-provider-catalog.md) — **decided** on 23 November 2026: open a new issue for a large configurable provider catalog (issue #29).
-- [Tab Switcher MRU evaluation](research/tab-switcher-mru-evaluation.md) — **decided** on 23 November 2026: keep the current limit of five (issue #24).
-- [Tab title renaming](research/tab-title-renaming.md) — **implemented** in PR #53 / issue #40; earlier research was issue #31.
+- [AI tab organizer](research/ai-tab-organizer.md) — **pendente**; research and local prototype are frozen until Chrome Web Store publication; related issues #36 and #37.
+- [Command Bar first-use review](research/command-bar-first-use-review.md) — **implementado** in PR #48 / issue #26; review issue #21.
+- [Command Bar relevance evaluation](research/command-bar-relevance-evaluation.md) — **decidido**; issue #22 is concluded, and cold-start performance follow-up #55 also covers concluded baselines from #23.
+- [Competitive analysis](research/competitive-analysis.md) — **decidido**; reference research related to parent issue #20, with no dedicated research issue or pending product decision.
+- [Recently closed tabs evaluation](research/recently-closed-tabs-evaluation.md) — **decidido** on 23 November 2026: do not build searchable recently closed tabs (issue #28).
+- [Search provider catalog](research/search-provider-catalog.md) — **decidido** on 23 November 2026: open a new issue for a large configurable provider catalog (issue #29).
+- [Tab Switcher MRU evaluation](research/tab-switcher-mru-evaluation.md) — **decidido** on 23 November 2026: keep the current limit of five (issue #24).
+- [Tab title renaming](research/tab-title-renaming.md) — **implementado** in PR #53 / issue #40; earlier research was issue #31.
 
 ## Agents
 

@@ -2,7 +2,7 @@
 
 - **Date:** 19 November 2026 (research); 23 November 2026 (decision)
 - **Issue:** [#28](https://github.com/pedrotmr/keybar/issues/28)
-- **Status:** decidido — do not build searchable recently closed tabs.
+- **Status:** decidido — do not build searchable recently closed tabs; the body preserves the pre-decision recommendation and issue wording.
 
 **Updated:** 19 November 2026
 **Scope:** Evidence-based recommendation for [issue #28](https://github.com/pedrotmr/keybar/issues/28). This is a decision artifact, not an implementation.

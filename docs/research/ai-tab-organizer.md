@@ -1,6 +1,6 @@
 # AI tab organizer: research and prototype notes
 
-- **Date:** 2026-11-05
+- **Date:** 2026-11-05 (updated); 23 November 2026 (freeze decision)
 - **Issue:** [#36](https://github.com/pedrotmr/keybar/issues/36), [#37](https://github.com/pedrotmr/keybar/issues/37)
 - **Status:** pendente — frozen until Chrome Web Store publication.
 
