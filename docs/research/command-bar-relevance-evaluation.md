@@ -1,5 +1,9 @@
 # Command Bar relevance evaluation
 
+- **Date:** 18 November 2026 (evaluation); 23 November 2026 (decision)
+- **Issue:** [#22](https://github.com/pedrotmr/keybar/issues/22); performance follow-up [#55](https://github.com/pedrotmr/keybar/issues/55) also covers concluded baselines from #23
+- **Status:** decidido — evaluation and performance baselines concluded; follow-up is #55.
+
 **Run date:** 18 November 2026 · **Fixture:** `keybar-command-bar-synthetic-v1` · **Method:** local deterministic evaluation of the existing `searchItems` interface.
 
 ## Scope and assumptions

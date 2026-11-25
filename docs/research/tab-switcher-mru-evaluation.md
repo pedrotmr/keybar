@@ -1,5 +1,9 @@
 # Tab Switcher MRU evaluation · Issue #24
 
+- **Date:** research date not recorded; decision 23 November 2026
+- **Issue:** [#24](https://github.com/pedrotmr/keybar/issues/24)
+- **Status:** decidido — keep the current MRU size of five; do not implement the recommendation of ten.
+
 Beta a compact, title-first list of up to ten tabs in the current window, including the active tab. Keep the previous tab preselected so a quick shortcut press and release still toggles between the two most recent tabs in that window. Keep five as the comparison baseline. Use Command Bar tab search for other windows while the beta establishes how often people need the shortcut to cross a window boundary.
 
 ## Current behavior

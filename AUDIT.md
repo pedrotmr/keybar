@@ -1,5 +1,7 @@
 # Auditoria de produção — 31/10/2026
 
+> **Nota histórica:** esta auditoria é um retrato de 31/10/2026 e está desatualizada. Consulte a documentação atual e os PRs posteriores para o estado vigente.
+
 ## Parecer
 
 **Liberação condicionada à validação com leitor de tela, reflow estreito e ciclo de vida sob falhas/suspensão.** As correções estão implementadas, os checks automatizados passaram e os fluxos principais foram exercitados no build real pelo BrowserOS neo. Isso ainda não cobre toda a matriz de produção. A auditoria não publicou release, não introduziu serviço externo e não alterou as permissões do manifest. A preparação posterior do PR foi autorizada pelo fluxo full-stop.

@@ -1,5 +1,9 @@
 # AI tab organizer: research and prototype notes
 
+- **Date:** 2026-11-05
+- **Issue:** [#36](https://github.com/pedrotmr/keybar/issues/36), [#37](https://github.com/pedrotmr/keybar/issues/37)
+- **Status:** pendente — frozen until Chrome Web Store publication.
+
 **Updated:** 2026-11-05
 
 **Scope:** personal, local prototype only. This does not select a production provider or authorize a Keybar rollout.

@@ -1,5 +1,9 @@
 # Competitive analysis: command menus and tab switching
 
+- **Date:** 3 November 2026 (updated); research sample collected 2 November 2026
+- **Issue:** None — reference research; no matching issue.
+- **Status:** decidido — reference material; no pending product decision.
+
 **Updated:** 3 November 2026 · **Research sample collected:** 2 November 2026 · **Product reviewed:** Command Menu (working name in the repo)
 
 ## Read this first
