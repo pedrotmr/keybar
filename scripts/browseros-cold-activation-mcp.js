@@ -706,8 +706,25 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         }
       }
     } catch (error) {
-      await fixture.goto(originalFixtureUrl).catch(() => undefined);
-      await releaseLock().catch(() => undefined);
+      let restorationFailure = null;
+      let lockReleaseFailure = null;
+      try {
+        await fixture.goto(originalFixtureUrl);
+      } catch (cleanupError) {
+        restorationFailure = cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError));
+      }
+      try {
+        await releaseLock();
+      } catch (cleanupError) {
+        lockReleaseFailure = cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError));
+      }
+      const failureMessage = error instanceof Error ? error.message : String(error);
+      const cleanupErrors = [
+        restorationFailure
+          ? `Could not restore the fixture to ${originalFixtureUrl}: ${restorationFailure.message}`
+          : null,
+        lockReleaseFailure ? `Could not release the fixture lock: ${lockReleaseFailure.message}` : null,
+      ].filter(Boolean);
       return {
         ok: false,
         surface,
@@ -715,7 +732,9 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         cold,
         completed: samples,
         failedIndex: index,
-        error: error instanceof Error ? error.message : String(error),
+        error: [failureMessage, ...cleanupErrors].join('; '),
+        ...(restorationFailure ? { fixtureRestored: false, restorationError: restorationFailure.message } : {}),
+        ...(lockReleaseFailure ? { lockReleased: false, lockReleaseError: lockReleaseFailure.message } : {}),
       };
     }
   }
