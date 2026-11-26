@@ -2094,6 +2094,8 @@ test('background message and command contracts', async () => {
     let activeTabQuery;
     const privilegedMutations = [];
     let permissionWindowOptions;
+    let overlayOpenResponse = { success: true };
+    let failPopupOpen = false;
     let activeBackgroundTab = { id: 42, title: 'Shortcut settings', url: 'chrome://extensions/shortcuts', windowId: 1 };
     const startupTabs = [
       activeBackgroundTab,
@@ -2104,6 +2106,7 @@ test('background message and command contracts', async () => {
         onClicked: makeEvent(),
         openPopup: async () => {
           actionCalls.push({ type: 'openPopup' });
+          if (failPopupOpen) throw new Error('Native popup unavailable');
         },
         setPopup: async (details) => {
           actionCalls.push({ type: 'setPopup', ...details });
@@ -2137,6 +2140,11 @@ test('background message and command contracts', async () => {
           id === activeBackgroundTab.id
             ? activeBackgroundTab
             : { id, url: 'https://example.test/old', title: 'Old title', windowId: 1, index: 0 },
+        sendMessage: async (_tabId, message) => {
+          if (message.action === 'overlay:open') return overlayOpenResponse;
+          if (message.action === 'overlay:surface-status') return { open: false };
+          return undefined;
+        },
         query: async (queryInfo) => {
           if (queryInfo?.active) {
             activeTabQuery = queryInfo;
@@ -2154,8 +2162,10 @@ test('background message and command contracts', async () => {
         },
         create: async (options) => {
           permissionWindowOptions = options;
+          actionCalls.push({ type: 'createWindow', options });
           return { id: 99 };
         },
+        getAll: async () => [{ id: 1 }],
       },
     };
     await server.ssrLoadModule(`/${artifacts.background.entry}`);
@@ -2229,6 +2239,28 @@ test('background message and command contracts', async () => {
     );
     assert.ok(actionCalls.some((call) => call.type === 'openPopup'));
     assert.equal(sessionStore.nextPaletteMode, 'commands');
+    assert.equal(
+      actionCalls.filter((call) => call.type === 'setPopup' && call.tabId === activeBackgroundTab.id).at(-1)?.popup,
+      artifacts.popupHtml,
+      'the restricted-page popup route remains configured after opening the fallback',
+    );
+
+    activeBackgroundTab.url = 'https://example.test/current';
+    overlayOpenResponse = { success: false };
+    failPopupOpen = true;
+    actionCalls.length = 0;
+    globalThis.chrome.action.onClicked.listeners[0](activeBackgroundTab);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(actionCalls.some((call) => call.type === 'openPopup'));
+    assert.ok(actionCalls.some((call) => call.type === 'createWindow'));
+    assert.equal(
+      actionCalls.filter((call) => call.type === 'setPopup' && call.tabId === activeBackgroundTab.id).at(-1)?.popup,
+      '',
+      'an eligible page restores toolbar-click routing after the popup fallback fails',
+    );
+    activeBackgroundTab.url = 'chrome://extensions/shortcuts';
+    overlayOpenResponse = { success: true };
+    failPopupOpen = false;
 
     const updatedListener = browserEvents.onUpdated.listeners.at(-1);
     updatedListener(

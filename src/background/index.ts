@@ -138,12 +138,9 @@ const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Pro
       const postRemovalWindow = await chrome.windows.get(windowId, { populate: true }).catch(() => undefined);
       if (!postRemovalWindow) {
         closedWindowCount += 1;
-      } else if ((postRemovalWindow.tabs ?? []).length) {
+      } else {
         remainingWindowIds.push(windowId);
         remainingPlaceholderIdsByWindow[String(windowId)] = [...ownedPlaceholderIds];
-      } else {
-        await chrome.windows.remove(windowId);
-        closedWindowCount += 1;
       }
     } catch {
       remainingWindowIds.push(windowId);
@@ -298,10 +295,15 @@ const openPopup = async (
   await chrome.action.setPopup({ tabId, popup: popupPath });
 
   try {
-    await chrome.action.openPopup();
-  } catch {
-    const url = chrome.runtime.getURL(`${popupPath}?mode=${mode}&openedAt=${openedAt}`);
-    await chrome.windows.create({ url, type: 'popup', width: 600, height: 620, focused: true });
+    try {
+      await chrome.action.openPopup();
+    } catch {
+      const url = chrome.runtime.getURL(`${popupPath}?mode=${mode}&openedAt=${openedAt}`);
+      await chrome.windows.create({ url, type: 'popup', width: 600, height: 620, focused: true });
+    }
+  } finally {
+    // Keep the popup route on restricted pages; eligible pages return to toolbar-click routing.
+    await configureActionForTab(tabId).catch(() => undefined);
   }
 };
 
@@ -1025,22 +1027,34 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
       const targets: number[] = [];
       const initialTargetTabIds = new Set<number>();
       for (let index = 0; index < 3; index += 1) {
-        const fixtureWindow = await chrome.windows.create({ focused: false });
+        const initialTab = await chrome.tabs.create({
+          windowId: mainWindowId,
+          active: false,
+          url: 'about:blank',
+        });
+        const initialTabId = initialTab.id;
+        if (initialTabId === undefined) {
+          throw new Error('Chrome did not create an identifiable fixture placeholder tab.');
+        }
+        const fixtureWindow = await chrome.windows
+          .create({ focused: false, tabId: initialTabId })
+          .catch(async (error: unknown) => {
+            await chrome.tabs.remove(initialTabId).catch(() => undefined);
+            throw error;
+          });
         if (!fixtureWindow || fixtureWindow.id === undefined) {
+          await chrome.tabs.remove(initialTabId).catch(() => undefined);
           throw new Error('Chrome did not create a fixture window.');
         }
         targets.push(fixtureWindow.id);
-        const initialTabs = await chrome.tabs.query({ windowId: fixtureWindow.id });
-        const initialTabIds = initialTabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id]));
-        initialTabs.forEach((tab) => {
-          if (tab.id !== undefined) {
-            initialTargetTabIds.add(tab.id);
-          }
-        });
+        initialTargetTabIds.add(initialTabId);
         try {
-          await rememberActivationBenchmarkFixtureWindow(fixtureWindow.id, initialTabIds);
+          await rememberActivationBenchmarkFixtureWindow(fixtureWindow.id, [initialTabId]);
         } catch (error) {
-          await chrome.windows.remove(fixtureWindow.id).catch(() => undefined);
+          const currentInitialTab = await chrome.tabs.get(initialTabId).catch(() => undefined);
+          if (currentInitialTab && isDisposableActivationBenchmarkPlaceholderTab(currentInitialTab)) {
+            await chrome.tabs.remove(initialTabId).catch(() => undefined);
+          }
           throw error;
         }
       }
@@ -1055,15 +1069,16 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
           .flatMap((tab) => (tab.id === undefined ? [] : [tab.id]));
         await chrome.tabs.move(group, { windowId: targetWindowId, index: -1 });
       }
-      const postMoveTabs = await chrome.tabs.query({});
-      const emptyNewTabs = postMoveTabs.flatMap((tab) =>
-        tab.id !== undefined &&
-        initialTargetTabIds.has(tab.id) &&
-        targets.includes(Number(tab.windowId)) &&
-        isDisposableActivationBenchmarkPlaceholderTab(tab)
-          ? [tab.id]
-          : [],
-      );
+      const emptyNewTabs = (
+        await Promise.all(
+          [...initialTargetTabIds].map(async (tabId) => {
+            const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+            return tab && targets.includes(Number(tab.windowId)) && isDisposableActivationBenchmarkPlaceholderTab(tab)
+              ? tabId
+              : null;
+          }),
+        )
+      ).filter((tabId): tabId is number => tabId !== null);
       if (emptyNewTabs.length) {
         await chrome.tabs.remove(emptyNewTabs);
       }

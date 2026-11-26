@@ -465,6 +465,7 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
     throw new Error(`The active BrowserOS tab is not an exact Keybar fixture URL: ${originalFixtureUrl}`);
   }
   const lockKey = 'keybar:activation-benchmark-lock';
+  // BrowserOS run calls are capped at 30s, so this lease outlives any in-flight navigation by 40x.
   const lockTtlMs = 20 * 60 * 1000;
   const lockAcquisition = await fixture.evaluateInPage(
     ({ key, ttlMs }) => {
