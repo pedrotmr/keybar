@@ -2095,6 +2095,10 @@ test('background message and command contracts', async () => {
     const privilegedMutations = [];
     let permissionWindowOptions;
     let activeBackgroundTab = { id: 42, title: 'Shortcut settings', url: 'chrome://extensions/shortcuts', windowId: 1 };
+    const startupTabs = [
+      activeBackgroundTab,
+      { id: 9, title: 'Example tab', url: 'https://example.test/', windowId: 1 },
+    ];
     globalThis.chrome = {
       action: {
         onClicked: makeEvent(),
@@ -2138,7 +2142,7 @@ test('background message and command contracts', async () => {
             activeTabQuery = queryInfo;
             return [activeBackgroundTab];
           }
-          return [];
+          return startupTabs;
         },
       },
       permissions: { ...permissionEvents, getAll: async () => ({ permissions: [] }) },
@@ -2156,6 +2160,27 @@ test('background message and command contracts', async () => {
     };
     await server.ssrLoadModule(`/${artifacts.background.entry}`);
     await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(
+      actionCalls.filter((call) => call.type === 'setPopup'),
+      [],
+      'a cold worker activation does not configure the toolbar action across every open tab',
+    );
+
+    for (const [event, name] of [
+      [installedEvents.onInstalled, 'installation'],
+      [installedEvents.onStartup, 'browser startup'],
+    ]) {
+      actionCalls.length = 0;
+      event.listeners[0]();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.equal(
+        actionCalls.filter((call) => call.type === 'setPopup').length,
+        startupTabs.length,
+        `${name} still configures the action for open tabs`,
+      );
+    }
+
+    actionCalls.length = 0;
     browserEvents.onActivated.listeners[0]({ tabId: activeBackgroundTab.id });
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.ok(

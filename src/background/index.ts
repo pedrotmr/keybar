@@ -603,7 +603,6 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   void configureActionForOpenTabs().catch(() => undefined);
 });
-void configureActionForOpenTabs().catch(() => undefined);
 
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === 'open-command-palette') {

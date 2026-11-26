@@ -13,6 +13,7 @@
     "configure:tab-shortcut": "node scripts/configure-tab-shortcut.mjs",
     "check:extension": "node scripts/check-extension.mjs",
     "fixture:extension": "vite --host 127.0.0.1 --port 8769 --strictPort",
+    "fixture:activation": "node scripts/activation-fixture-server.mjs",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
