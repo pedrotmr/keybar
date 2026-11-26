@@ -563,6 +563,7 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
       }
 
       const activationId = `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`;
+      const activationWaitStartedAt = Date.now();
       const trigger = await fixture.evaluateInPage(
         ({ requestedMode, requestedActivationId }) => {
           const startedAt = Date.now();
@@ -599,33 +600,44 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
         };
       }
 
-      const activationWait = await fixture.waitForSelector(
-        'html[data-keybar-benchmark-result-after-paint-opportunity-at], html[data-keybar-benchmark-trigger-complete="true"]',
-        { timeout: resultTimeoutMs },
-      );
-      if (!activationWait.matched) {
-        const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
-        throw new Error(
-          `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial.value)}`,
-        );
-      }
-
       const triggerComplete = await fixture.waitForSelector('html[data-keybar-benchmark-trigger-complete="true"]', {
         timeout: resultTimeoutMs,
       });
       if (!triggerComplete.matched) {
-        throw new Error('Benchmark activation response did not settle before the next sample');
+        const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+        throw new Error(`Benchmark activation response timed out: ${JSON.stringify(partial.value)}`);
       }
 
-      const probeResult = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
-      const probe = probeResult.value;
+      let probeResult = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+      let probe = probeResult.value;
       if (!probe) {
         throw new Error('Fixture probe disappeared before results could be read');
       }
       if (probe.triggerResponse?.activationId === activationId && probe.triggerResponse.response?.success === false) {
         throw new Error(`Benchmark activation was rejected: ${JSON.stringify(probe.triggerResponse.response)}`);
       }
+      if (probe.triggerResponse?.activationId !== activationId || probe.triggerResponse.response?.success !== true) {
+        throw new Error(
+          `Benchmark response did not match activation ${activationId}: ${JSON.stringify(probe.triggerResponse)}`,
+        );
+      }
       if (!probe.bridgeState?.resultAfterPaintOpportunityAt) {
+        const remainingMs = Math.max(0, resultTimeoutMs - (Date.now() - activationWaitStartedAt));
+        const resultWait = remainingMs
+          ? await fixture.waitForSelector('html[data-keybar-benchmark-result-after-paint-opportunity-at]', {
+              timeout: remainingMs,
+            })
+          : { matched: false };
+        if (!resultWait.matched) {
+          const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+          throw new Error(
+            `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial.value)}`,
+          );
+        }
+        probeResult = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+        probe = probeResult.value;
+      }
+      if (!probe?.bridgeState?.resultAfterPaintOpportunityAt) {
         throw new Error(`The ${surface} activation completed without a visible selected result`);
       }
       const events = probe.events.filter((event) => event.activationId === activationId);
@@ -713,10 +725,20 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
         ((sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.ceil((sorted.length - 1) / 2)]) / 2).toFixed(1),
       )
     : null;
+  let restorationFailure = null;
   if (!keepDocument) {
-    await fixture.goto(originalFixtureUrl);
+    try {
+      await fixture.goto(originalFixtureUrl);
+    } catch (error) {
+      restorationFailure = error instanceof Error ? error : new Error(String(error));
+    }
   }
-  await releaseLock();
+  let lockReleaseFailure = null;
+  try {
+    await releaseLock();
+  } catch (error) {
+    lockReleaseFailure = error instanceof Error ? error : new Error(String(error));
+  }
   return {
     ok: true,
     surface,
@@ -728,6 +750,8 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
     maxFirstResultAfterPaintOpportunityMs: sorted.at(-1) ?? null,
     p95FirstResultAfterPaintOpportunityMs: percentile95,
     p95RequiresAtLeast: 20,
+    ...(restorationFailure ? { fixtureRestored: false, restorationError: restorationFailure.message } : {}),
+    ...(lockReleaseFailure ? { lockReleased: false, lockReleaseError: lockReleaseFailure.message } : {}),
     samples,
   };
 };
@@ -786,15 +810,13 @@ export const collectKeybarColdActivationMcp = async (
 
   const fixture = browser.page(pageId);
   const collectSample = async () => {
-    const wait = await fixture.waitForSelector(
-      'html[data-keybar-benchmark-result-after-paint-opportunity-at], html[data-keybar-benchmark-trigger-complete="true"]',
-      { timeout: resultTimeoutMs },
-    );
-    if (!wait.matched) {
+    const collectionStartedAt = Date.now();
+    const triggerComplete = await fixture.waitForSelector('html[data-keybar-benchmark-trigger-complete="true"]', {
+      timeout: resultTimeoutMs,
+    });
+    if (!triggerComplete.matched) {
       const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
-      const error = new Error(
-        `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial.value)}`,
-      );
+      const error = new Error(`Benchmark activation response timed out: ${JSON.stringify(partial.value)}`);
       return {
         ok: false,
         pending: false,
@@ -805,29 +827,42 @@ export const collectKeybarColdActivationMcp = async (
       };
     }
 
-    const triggerComplete = await fixture.waitForSelector('html[data-keybar-benchmark-trigger-complete="true"]', {
-      timeout: resultTimeoutMs,
-    });
-    if (!triggerComplete.matched) {
-      throw new Error('Benchmark activation response did not settle before the next sample');
-    }
-    const probeResult = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
-    const probe = probeResult.value;
+    let probeResult = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+    let probe = probeResult.value;
     if (!probe) {
       throw new Error('Fixture probe disappeared before results could be read');
     }
     if (probe.triggerResponse?.activationId === activationId && probe.triggerResponse.response?.success === false) {
       throw new Error(`Benchmark activation was rejected: ${JSON.stringify(probe.triggerResponse.response)}`);
     }
+    if (probe.triggerResponse?.activationId !== activationId || probe.triggerResponse.response?.success !== true) {
+      throw new Error(
+        `Benchmark response did not match activation ${activationId}: ${JSON.stringify(probe.triggerResponse)}`,
+      );
+    }
     if (!probe.bridgeState?.resultAfterPaintOpportunityAt) {
-      return {
-        ok: false,
-        pending: false,
-        failedIndex: index,
-        surface,
-        cell,
-        error: `The ${surface} activation completed without a visible selected result`,
-      };
+      const remainingMs = Math.max(0, resultTimeoutMs - (Date.now() - collectionStartedAt));
+      const resultWait = remainingMs
+        ? await fixture.waitForSelector('html[data-keybar-benchmark-result-after-paint-opportunity-at]', {
+            timeout: remainingMs,
+          })
+        : { matched: false };
+      if (!resultWait.matched) {
+        const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+        return {
+          ok: false,
+          pending: false,
+          failedIndex: index,
+          surface,
+          cell,
+          error: `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial.value)}`,
+        };
+      }
+      probeResult = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+      probe = probeResult.value;
+    }
+    if (!probe?.bridgeState?.resultAfterPaintOpportunityAt) {
+      throw new Error(`The ${surface} activation completed without a visible selected result`);
     }
 
     const events = probe.events.filter((event) => event.activationId === activationId);
@@ -925,6 +960,15 @@ export const collectKeybarColdActivationMcp = async (
     );
   } catch (error) {
     lockReleaseFailure = error instanceof Error ? error : new Error(String(error));
+  }
+
+  if (restorationFailure && !collectionFailure && result?.ok === true) {
+    result = {
+      ...result,
+      fixtureRestored: false,
+      restorationError: restorationFailure.message,
+    };
+    restorationFailure = null;
   }
 
   const cleanupFailures = [collectionFailure, restorationFailure, lockReleaseFailure].filter(Boolean);
