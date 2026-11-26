@@ -668,19 +668,22 @@ export const collectKeybarColdActivationMcp = async (
   }
 
   const fixture = browser.page(pageId);
-  try {
+  const collectSample = async () => {
     const wait = await fixture.waitForSelector('html[data-keybar-benchmark-result-after-paint-opportunity-at]', {
       timeout: resultTimeoutMs,
     });
     if (!wait.matched) {
       const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+      const error = new Error(
+        `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial.value)}`,
+      );
       return {
         ok: false,
         pending: false,
         failedIndex: index,
         surface,
         cell,
-        error: `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial.value)}`,
+        error: error.message,
       };
     }
 
@@ -753,9 +756,42 @@ export const collectKeybarColdActivationMcp = async (
         },
       },
     };
-  } finally {
-    if (!keepDocument) {
-      await fixture.goto(restoreUrl).catch(() => undefined);
+  };
+
+  let result;
+  let collectionFailure = null;
+  try {
+    result = await collectSample();
+    if (result?.ok === false) {
+      collectionFailure = new Error(result.error ?? 'Benchmark sample collection failed.');
+    }
+  } catch (error) {
+    collectionFailure = error instanceof Error ? error : new Error(String(error));
+  }
+
+  let restorationFailure = null;
+  if (!keepDocument) {
+    try {
+      await fixture.goto(restoreUrl);
+    } catch (error) {
+      restorationFailure = error instanceof Error ? error : new Error(String(error));
     }
   }
+
+  if (restorationFailure && collectionFailure) {
+    throw new AggregateError(
+      [collectionFailure, restorationFailure],
+      `Benchmark collection and fixture restoration both failed: ${collectionFailure.message}; ${restorationFailure.message}`,
+    );
+  }
+  if (restorationFailure) {
+    throw new Error(`Could not restore the fixture to ${restoreUrl}: ${restorationFailure.message}`, {
+      cause: restorationFailure,
+    });
+  }
+  if (collectionFailure && result?.ok !== false) {
+    throw collectionFailure;
+  }
+
+  return result;
 };

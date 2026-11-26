@@ -55,6 +55,7 @@ export const reportActivationBenchmarkStage = (
   let cancelled = false;
   let frame = 0;
   let framesChecked = 0;
+  let visibleFrames = 0;
 
   const checkPaint = (): void => {
     framesChecked += 1;
@@ -64,8 +65,9 @@ export const reportActivationBenchmarkStage = (
     }
 
     if (isVisibleForPaint(element)) {
+      visibleFrames += 1;
       const requiredFrames = stage === 'firstResultAfterPaintOpportunity' ? 2 : 1;
-      if (framesChecked < requiredFrames) {
+      if (visibleFrames < requiredFrames) {
         frame = window.requestAnimationFrame(checkPaint);
         return;
       }
@@ -87,6 +89,7 @@ export const reportActivationBenchmarkStage = (
       return;
     }
 
+    visibleFrames = 0;
     frame = window.requestAnimationFrame(checkPaint);
   };
 
