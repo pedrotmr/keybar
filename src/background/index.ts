@@ -961,6 +961,13 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
         );
       }
 
+      const mainTabIdsToMove = mainTabs.flatMap((tab) =>
+        tab.id !== undefined && tab.windowId !== mainWindowId ? [tab.id] : [],
+      );
+      for (let index = 0; index < mainTabIdsToMove.length; index += 250) {
+        await chrome.tabs.move(mainTabIdsToMove.slice(index, index + 250), { windowId: mainWindowId, index: -1 });
+      }
+
       const targets: number[] = [];
       for (let index = 0; index < 3; index += 1) {
         const fixtureWindow = await chrome.windows.create({ focused: false });

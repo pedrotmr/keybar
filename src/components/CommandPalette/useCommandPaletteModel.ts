@@ -152,7 +152,7 @@ export const useCommandPaletteModel = ({
     input?.focus({ preventScroll: true });
 
     if (isActivationBenchmarkBuild && surface === 'overlay' && input?.matches(':focus')) {
-      reportActivationBenchmarkStage('surfaceFocused', 'command-bar', input);
+      return reportActivationBenchmarkStage('surfaceFocused', 'command-bar', input);
     }
   }, []);
 

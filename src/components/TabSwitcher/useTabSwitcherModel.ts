@@ -187,7 +187,7 @@ export const useTabSwitcherModel = ({
     focusTarget?.focus({ preventScroll: true });
 
     if (isActivationBenchmarkBuild && surface === 'overlay' && listboxRef.current?.matches(':focus')) {
-      reportActivationBenchmarkStage('surfaceFocused', 'tab-switcher', listboxRef.current);
+      return reportActivationBenchmarkStage('surfaceFocused', 'tab-switcher', listboxRef.current);
     }
   }, [hasTabs, surface]);
 

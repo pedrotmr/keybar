@@ -1,13 +1,14 @@
 /*
  * Paste this file into BrowserOS neo's `run` tool and append:
- *   return await runKeybarColdActivationMcp(browser, { surface: 'command-bar', count: 2 });
+ *   return await runKeybarColdActivationMcp(browser, { surface: 'command-bar', count: 20 });
  *
- * For split sampling, pass `waitForResult: false`, retain its `activationId`,
- * `pageId`, `startedPerfMs`, `restoreUrl`, `keepDocument`, and verified worker
- * fields, then pass those fields to `collectKeybarColdActivationMcp` in a later
- * run. Reused-document warm batches require a one-sample `keepDocument`
- * activation first; close its surface with Escape before setting
- * `reuseDocument: true`.
+ * For split sampling, retain the complete pending result and pass it unchanged:
+ *   const pending = await runKeybarColdActivationMcp(browser, {
+ *     surface: 'command-bar', count: 1, waitForResult: false,
+ *   });
+ *   return await collectKeybarColdActivationMcp(browser, pending);
+ * Reused-document warm batches require a one-sample `keepDocument` activation
+ * first; close its surface with Escape before setting `reuseDocument: true`.
  *
  * The runner keeps the fixture active, stops Keybar from the background
  * serviceworker-internals page, and sends a test-only activation through the
@@ -139,7 +140,7 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
         let warmupResponse = null;
         let currentSample = sample;
         let currentActivationId = null;
-        let sawHost = false;
+        let observedHost = null;
         let wasVisible = false;
         let activation = 0;
         let focused = false;
@@ -165,15 +166,22 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
         let hostObserver;
         const inspect = () => {
           const host = document.getElementById(hostId);
-          if (host && !sawHost) {
-            sawHost = true;
-            record('hostInjected');
-            insertionObserver.disconnect();
-            hostObserver = new MutationObserver(inspect);
-            hostObserver.observe(host, {
-              attributes: true,
-              attributeFilter: ['style', 'class', 'aria-hidden', 'popover'],
-            });
+          if (host !== observedHost) {
+            hostObserver?.disconnect();
+            observedHost = host;
+            wasVisible = false;
+            if (host) {
+              if (currentActivationId) {
+                record('hostInjected');
+              }
+              hostObserver = new MutationObserver(inspect);
+              hostObserver.observe(host, {
+                attributes: true,
+                attributeFilter: ['style', 'class', 'aria-hidden', 'popover'],
+              });
+            } else {
+              root.setAttribute('data-keybar-benchmark-host-hidden', 'true');
+            }
           }
           const visible = Boolean(host && isVisible(host));
           if (visible && !wasVisible) {
@@ -188,17 +196,6 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
         };
         insertionObserver = new MutationObserver(inspect);
         insertionObserver.observe(root, { childList: true });
-        document.addEventListener(
-          'focusin',
-          (event) => {
-            const host = document.getElementById(hostId);
-            if (!focused && host && isVisible(host) && event.composedPath().includes(host)) {
-              focused = true;
-              record('focused', { activation });
-            }
-          },
-          true,
-        );
         window.addEventListener('keybar:activation-benchmark-stage', (event) => {
           const { stage, surface } = event.detail || {};
           if (stage === 'surfaceFocused' && !focused) {
@@ -326,6 +323,9 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
     if (!before.statuses.length || before.statuses.some((status) => status !== 'STOPPED')) {
       await internals.evaluateInPage(
         (scope) => {
+          const observerKey = '__keybarActivationBenchmarkStopObserver';
+          window[observerKey]?.disconnect();
+          delete window[observerKey];
           document.body.removeAttribute('data-keybar-benchmark-worker-stopped');
           const read = () => {
             const registration = [...document.querySelectorAll('.serviceworker-registration')].find(
@@ -339,11 +339,18 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
             );
           };
           let stopRequested = false;
+          let observer;
+          const disconnectObserver = () => {
+            observer?.disconnect();
+            if (window[observerKey] === observer) {
+              delete window[observerKey];
+            }
+          };
           const stopIfRunning = () => {
             const statuses = read();
             if (statuses?.length && statuses.every((status) => status === 'STOPPED')) {
               document.body.setAttribute('data-keybar-benchmark-worker-stopped', 'true');
-              observer.disconnect();
+              disconnectObserver();
               return true;
             }
 
@@ -362,7 +369,8 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
             }
             return false;
           };
-          const observer = new MutationObserver(stopIfRunning);
+          observer = new MutationObserver(stopIfRunning);
+          window[observerKey] = observer;
           observer.observe(document.body, { childList: true, characterData: true, subtree: true });
           if (stopIfRunning()) {
             return { stopped: true };
@@ -378,12 +386,21 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
         workerScope,
         { settle: true },
       );
-      const wait = await internals.waitForSelector('body[data-keybar-benchmark-worker-stopped="true"]', {
-        timeout: workerStopTimeoutMs,
-      });
-      if (!wait.matched) {
-        const current = await readWorker();
-        throw new Error(`Keybar worker did not stop: ${JSON.stringify(current)}`);
+      try {
+        const wait = await internals.waitForSelector('body[data-keybar-benchmark-worker-stopped="true"]', {
+          timeout: workerStopTimeoutMs,
+        });
+        if (!wait.matched) {
+          const current = await readWorker();
+          throw new Error(`Keybar worker did not stop: ${JSON.stringify(current)}`);
+        }
+      } finally {
+        await internals.evaluateInPage(() => {
+          const observerKey = '__keybarActivationBenchmarkStopObserver';
+          window[observerKey]?.disconnect();
+          delete window[observerKey];
+          return true;
+        });
       }
     }
 
@@ -408,8 +425,71 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
 
   const samples = [];
   const originalFixtureUrl = fixtureInfo.url;
+  const lockKey = 'keybar:activation-benchmark-lock';
+  const lockTtlMs = 20 * 60 * 1000;
+  const lockAcquisition = await fixture.evaluateInPage(
+    ({ key, ttlMs }) => {
+      const now = Date.now();
+      let existing = null;
+      try {
+        existing = JSON.parse(sessionStorage.getItem(key) || 'null');
+      } catch {
+        sessionStorage.removeItem(key);
+      }
+      if (existing?.expiresAt > now) {
+        return { acquired: false };
+      }
+      const token = crypto.randomUUID();
+      sessionStorage.setItem(key, JSON.stringify({ token, expiresAt: now + ttlMs }));
+      return { acquired: true, token };
+    },
+    { key: lockKey, ttlMs: lockTtlMs },
+  );
+  const lockToken = lockAcquisition.value?.token;
+  if (!lockAcquisition.value?.acquired || !lockToken) {
+    throw new Error('Another activation benchmark is already using this fixture tab');
+  }
+  const refreshLock = async () => {
+    const refreshed = await fixture.evaluateInPage(
+      ({ key, token, ttlMs }) => {
+        let current;
+        try {
+          current = JSON.parse(sessionStorage.getItem(key) || 'null');
+        } catch {
+          return false;
+        }
+        if (current?.token !== token) {
+          return false;
+        }
+        current.expiresAt = Date.now() + ttlMs;
+        sessionStorage.setItem(key, JSON.stringify(current));
+        return true;
+      },
+      { key: lockKey, token: lockToken, ttlMs: lockTtlMs },
+    );
+    if (!refreshed.value) {
+      throw new Error('Activation benchmark lost its fixture-tab lock');
+    }
+  };
+  const releaseLock = async () => {
+    await fixture.evaluateInPage(
+      ({ key, token }) => {
+        try {
+          const current = JSON.parse(sessionStorage.getItem(key) || 'null');
+          if (current?.token === token) {
+            sessionStorage.removeItem(key);
+          }
+        } catch {
+          sessionStorage.removeItem(key);
+        }
+        return true;
+      },
+      { key: lockKey, token: lockToken },
+    );
+  };
   for (let index = 0; index < count; index += 1) {
     try {
+      await refreshLock();
       const fixtureTabNumber = originalFixtureUrl.match(/[?&]tab=(\d+)/)?.[1] ?? '0000';
       const cellIdentifier = String(cell).replace(/[^a-z0-9_-]/gi, '-');
       const sampleUrl = `${fixtureOrigin}/fixture?tab=${fixtureTabNumber}&cell=${cellIdentifier}&sample=${Date.now()}-${index}`;
@@ -512,18 +592,18 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
           startedAt: trigger.value.startedAt,
           startedPerfMs: trigger.value.startedPerfMs,
           activationId: trigger.value.activationId,
+          hostWasPresentBeforeActivation: Boolean(probeBefore.hostPresent),
+          lockToken,
           restoreUrl: originalFixtureUrl,
           keepDocument,
         };
       }
 
-      const resultWait = await fixture.waitForSelector(
-        'html[data-keybar-benchmark-result-after-paint-opportunity-at]',
-        {
-          timeout: resultTimeoutMs,
-        },
+      const activationWait = await fixture.waitForSelector(
+        'html[data-keybar-benchmark-result-after-paint-opportunity-at], html[data-keybar-benchmark-trigger-complete="true"]',
+        { timeout: resultTimeoutMs },
       );
-      if (!resultWait.matched) {
+      if (!activationWait.matched) {
         const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
         throw new Error(
           `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial.value)}`,
@@ -542,9 +622,16 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
       if (!probe) {
         throw new Error('Fixture probe disappeared before results could be read');
       }
+      if (probe.triggerResponse?.activationId === activationId && probe.triggerResponse.response?.success === false) {
+        throw new Error(`Benchmark activation was rejected: ${JSON.stringify(probe.triggerResponse.response)}`);
+      }
+      if (!probe.bridgeState?.resultAfterPaintOpportunityAt) {
+        throw new Error(`The ${surface} activation completed without a visible selected result`);
+      }
       const events = probe.events.filter((event) => event.activationId === activationId);
       const activation = events.find((event) => event.name === 'hostShown')?.activation;
       const hostShown = events.find((event) => event.name === 'hostShown');
+      const hostInjected = events.find((event) => event.name === 'hostInjected');
       const surfaceShown = events.find((event) => event.name === 'surfaceShown');
       const focused = events.find((event) => event.name === 'focused' && event.activation === activation);
       const firstResultAfterPaintOpportunity = events.find(
@@ -554,6 +641,7 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
       if (
         !activation ||
         !hostShown ||
+        (!probeBefore.hostPresent && !hostInjected) ||
         !surfaceShown ||
         surfaceShown.surface !== surface ||
         !focused ||
@@ -586,6 +674,7 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
         workerWarm: workerBeforeTrigger.statuses.every((status) => status === 'RUNNING'),
         activationId,
         latencyMs: {
+          hostInjected: hostInjected ? duration(hostInjected) : null,
           hostShown: duration(hostShown),
           surfaceShown: duration(surfaceShown),
           focused: duration(focused),
@@ -604,6 +693,7 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
       }
     } catch (error) {
       await fixture.goto(originalFixtureUrl).catch(() => undefined);
+      await releaseLock().catch(() => undefined);
       return {
         ok: false,
         surface,
@@ -617,17 +707,27 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
   }
 
   const sorted = samples.map((sample) => sample.latencyMs.firstResultAfterPaintOpportunity).sort((a, b) => a - b);
-  const percentile95 = sorted.length ? sorted[Math.ceil(sorted.length * 0.95) - 1] : null;
+  const percentile95 = sorted.length >= 20 ? sorted[Math.ceil(sorted.length * 0.95) - 1] : null;
+  const median = sorted.length
+    ? Number(
+        ((sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.ceil((sorted.length - 1) / 2)]) / 2).toFixed(1),
+      )
+    : null;
   if (!keepDocument) {
     await fixture.goto(originalFixtureUrl);
   }
+  await releaseLock();
   return {
     ok: true,
     surface,
     cell,
     cold,
     count: samples.length,
+    minFirstResultAfterPaintOpportunityMs: sorted[0] ?? null,
+    medianFirstResultAfterPaintOpportunityMs: median,
+    maxFirstResultAfterPaintOpportunityMs: sorted.at(-1) ?? null,
     p95FirstResultAfterPaintOpportunityMs: percentile95,
+    p95RequiresAtLeast: 20,
     samples,
   };
 };
@@ -638,8 +738,10 @@ export const collectKeybarColdActivationMcp = async (
     pageId,
     activationId,
     startedPerfMs,
+    lockToken,
     restoreUrl,
-    keepDocument = false,
+    keepDocument,
+    hostWasPresentBeforeActivation,
     surface = 'command-bar',
     cell = 'unspecified',
     resultTimeoutMs = 25000,
@@ -663,15 +765,31 @@ export const collectKeybarColdActivationMcp = async (
   if (typeof activationId !== 'string' || !activationId) {
     throw new Error('Collector needs the activation ID returned by the activation runner');
   }
-  if (typeof restoreUrl !== 'string' || typeof keepDocument !== 'boolean') {
+  if (typeof restoreUrl !== 'string' || !restoreUrl || typeof keepDocument !== 'boolean') {
     throw new Error('Collector needs the restore URL and document-retention flag returned by the activation runner');
+  }
+  let parsedRestoreUrl;
+  try {
+    parsedRestoreUrl = new URL(restoreUrl);
+  } catch {
+    throw new Error(`Collector received an invalid fixture restore URL: ${restoreUrl}`);
+  }
+  if (parsedRestoreUrl.origin !== defaultBenchmarkOptions.fixtureOrigin || parsedRestoreUrl.pathname !== '/fixture') {
+    throw new Error(`Collector restore URL must be a Keybar fixture URL: ${restoreUrl}`);
+  }
+  if (typeof lockToken !== 'string' || !lockToken) {
+    throw new Error('Collector needs the fixture-tab lock token returned by the activation runner');
+  }
+  if (typeof hostWasPresentBeforeActivation !== 'boolean') {
+    throw new Error('Collector needs the pre-activation host state returned by the activation runner');
   }
 
   const fixture = browser.page(pageId);
   const collectSample = async () => {
-    const wait = await fixture.waitForSelector('html[data-keybar-benchmark-result-after-paint-opportunity-at]', {
-      timeout: resultTimeoutMs,
-    });
+    const wait = await fixture.waitForSelector(
+      'html[data-keybar-benchmark-result-after-paint-opportunity-at], html[data-keybar-benchmark-trigger-complete="true"]',
+      { timeout: resultTimeoutMs },
+    );
     if (!wait.matched) {
       const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
       const error = new Error(
@@ -693,11 +811,23 @@ export const collectKeybarColdActivationMcp = async (
     if (!triggerComplete.matched) {
       throw new Error('Benchmark activation response did not settle before the next sample');
     }
-
     const probeResult = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
     const probe = probeResult.value;
     if (!probe) {
       throw new Error('Fixture probe disappeared before results could be read');
+    }
+    if (probe.triggerResponse?.activationId === activationId && probe.triggerResponse.response?.success === false) {
+      throw new Error(`Benchmark activation was rejected: ${JSON.stringify(probe.triggerResponse.response)}`);
+    }
+    if (!probe.bridgeState?.resultAfterPaintOpportunityAt) {
+      return {
+        ok: false,
+        pending: false,
+        failedIndex: index,
+        surface,
+        cell,
+        error: `The ${surface} activation completed without a visible selected result`,
+      };
     }
 
     const events = probe.events.filter((event) => event.activationId === activationId);
@@ -712,7 +842,7 @@ export const collectKeybarColdActivationMcp = async (
     const firstResultAfterPaintOpportunityAt = firstResultAfterPaintOpportunity?.perfMs;
     if (
       !activation ||
-      (!verifiedWarm && !hostInjected) ||
+      (!hostWasPresentBeforeActivation && !hostInjected) ||
       !hostShown ||
       !surfaceShown ||
       surfaceShown.surface !== surface ||
@@ -770,6 +900,7 @@ export const collectKeybarColdActivationMcp = async (
   }
 
   let restorationFailure = null;
+  let lockReleaseFailure = null;
   if (!keepDocument) {
     try {
       await fixture.goto(restoreUrl);
@@ -777,11 +908,30 @@ export const collectKeybarColdActivationMcp = async (
       restorationFailure = error instanceof Error ? error : new Error(String(error));
     }
   }
+  try {
+    await fixture.evaluateInPage(
+      ({ key, token }) => {
+        try {
+          const current = JSON.parse(sessionStorage.getItem(key) || 'null');
+          if (current?.token === token) {
+            sessionStorage.removeItem(key);
+          }
+        } catch {
+          sessionStorage.removeItem(key);
+        }
+        return true;
+      },
+      { key: 'keybar:activation-benchmark-lock', token: lockToken },
+    );
+  } catch (error) {
+    lockReleaseFailure = error instanceof Error ? error : new Error(String(error));
+  }
 
-  if (restorationFailure && collectionFailure) {
+  const cleanupFailures = [collectionFailure, restorationFailure, lockReleaseFailure].filter(Boolean);
+  if (cleanupFailures.length > 1) {
     throw new AggregateError(
-      [collectionFailure, restorationFailure],
-      `Benchmark collection and fixture restoration both failed: ${collectionFailure.message}; ${restorationFailure.message}`,
+      cleanupFailures,
+      `Benchmark collection or cleanup failed: ${cleanupFailures.map((failure) => failure.message).join('; ')}`,
     );
   }
   if (restorationFailure) {
@@ -791,6 +941,9 @@ export const collectKeybarColdActivationMcp = async (
   }
   if (collectionFailure && result?.ok !== false) {
     throw collectionFailure;
+  }
+  if (lockReleaseFailure) {
+    throw lockReleaseFailure;
   }
 
   return result;
