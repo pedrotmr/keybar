@@ -63,6 +63,9 @@ const isBenchmarkFixtureSender = (sender: chrome.runtime.MessageSender): boolean
   }
 };
 
+const isActivationBenchmarkPlaceholderUrl = (url?: string): boolean =>
+  url === undefined || url === '' || url === 'about:blank' || url === 'chrome://newtab/';
+
 const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Promise<number> => {
   const storedWindowIds = await chrome.storage.session.get(ACTIVATION_BENCHMARK_WINDOW_IDS_KEY);
   const ownedWindowIds = Array.isArray(storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY])
@@ -79,9 +82,9 @@ const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Pro
     if (!window) {
       continue;
     }
-    const isPlaceholderUrl = (url?: string): boolean => url === 'chrome://newtab/' || url === 'about:blank';
     const isPlaceholderTab = (tab: chrome.tabs.Tab): boolean =>
-      isPlaceholderUrl(tab.url) && (tab.pendingUrl === undefined || isPlaceholderUrl(tab.pendingUrl));
+      isActivationBenchmarkPlaceholderUrl(tab.url) &&
+      (tab.pendingUrl === undefined || isActivationBenchmarkPlaceholderUrl(tab.pendingUrl));
     const tabs = window.tabs ?? [];
     if (tabs.some((tab) => !isPlaceholderTab(tab))) {
       remainingWindowIds.push(windowId);
@@ -994,13 +997,11 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
         await chrome.tabs.move(group, { windowId: targetWindowId, index: -1 });
       }
       const postMoveTabs = await chrome.tabs.query({});
-      const isPlaceholderUrl = (url?: string): boolean =>
-        url === undefined || url === '' || url === 'about:blank' || url === 'chrome://newtab/';
       const emptyNewTabs = postMoveTabs.flatMap((tab) =>
         tab.id !== undefined &&
         targets.includes(Number(tab.windowId)) &&
-        isPlaceholderUrl(tab.url) &&
-        (tab.pendingUrl === undefined || isPlaceholderUrl(tab.pendingUrl))
+        isActivationBenchmarkPlaceholderUrl(tab.url) &&
+        (tab.pendingUrl === undefined || isActivationBenchmarkPlaceholderUrl(tab.pendingUrl))
           ? [tab.id]
           : [],
       );

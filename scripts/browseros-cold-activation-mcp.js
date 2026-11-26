@@ -972,6 +972,14 @@ const collectKeybarColdActivationMcp = async (
     };
     restorationFailure = null;
   }
+  if (lockReleaseFailure && !collectionFailure && result?.ok === true) {
+    result = {
+      ...result,
+      lockReleased: false,
+      lockReleaseError: lockReleaseFailure.message,
+    };
+    lockReleaseFailure = null;
+  }
 
   const cleanupFailures = [collectionFailure, restorationFailure, lockReleaseFailure].filter(Boolean);
   if (cleanupFailures.length > 1) {
