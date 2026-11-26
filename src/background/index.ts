@@ -35,12 +35,88 @@ import {
 const TAB_PREVIEW_PREFIX = 'tabPreview:';
 const TAB_PREVIEW_IDS_KEY = 'tabPreviewIds';
 const OVERLAY_TAB_IDS_SESSION_KEY = 'keybarOverlayTabIds';
+const ACTIVATION_BENCHMARK_WINDOW_IDS_KEY = 'activationBenchmarkFixtureWindowIds';
 
 const MAX_TAB_PREVIEWS = 5;
 const TAB_SWITCHER_OPENING_TIMEOUT_MS = 5000;
 
 const ownExtensionUrlPrefix = chrome.runtime.getURL('');
 const popupPath = artifacts.popupHtml;
+const activationBenchmarkMode = import.meta.env.MODE.startsWith('activation-benchmark');
+const activationBenchmarkBaseline = import.meta.env.MODE === 'activation-benchmark-baseline';
+const activationBenchmarkOrigin = 'http://127.0.0.1:8770';
+
+const isBenchmarkFixtureSender = (sender: chrome.runtime.MessageSender): boolean => {
+  try {
+    const requestUrl = sender.url ? new URL(sender.url) : undefined;
+    return (
+      sender.id === chrome.runtime.id &&
+      sender.frameId === 0 &&
+      Number.isInteger(sender.tab?.id) &&
+      requestUrl?.origin === activationBenchmarkOrigin &&
+      requestUrl.pathname === '/fixture'
+    );
+  } catch {
+    return false;
+  }
+};
+
+const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Promise<number> => {
+  const storedWindowIds = await chrome.storage.session.get(ACTIVATION_BENCHMARK_WINDOW_IDS_KEY);
+  const ownedWindowIds = Array.isArray(storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY])
+    ? (storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY] as number[]).filter(Number.isInteger)
+    : [];
+  const remainingWindowIds: number[] = [];
+  let closedWindowCount = 0;
+  let openWindows: chrome.windows.Window[];
+
+  try {
+    openWindows = await chrome.windows.getAll({ populate: true, windowTypes: ['normal'] });
+  } catch {
+    return 0;
+  }
+  const windowsById = new Map<number, chrome.windows.Window>();
+  openWindows.forEach((window) => {
+    if (window.id !== undefined) {
+      windowsById.set(window.id, window);
+    }
+  });
+
+  for (const windowId of ownedWindowIds) {
+    if (windowId === mainWindowId) {
+      continue;
+    }
+    const window = windowsById.get(windowId);
+    if (!window) {
+      continue;
+    }
+    const tabs = window.tabs ?? [];
+    if (!tabs.length || tabs.some((tab) => tab.url !== 'chrome://newtab/' && tab.url !== 'about:blank')) {
+      remainingWindowIds.push(windowId);
+      continue;
+    }
+
+    try {
+      await chrome.windows.remove(windowId);
+      closedWindowCount += 1;
+    } catch {
+      remainingWindowIds.push(windowId);
+    }
+  }
+
+  await chrome.storage.session.set({ [ACTIVATION_BENCHMARK_WINDOW_IDS_KEY]: remainingWindowIds });
+  return closedWindowCount;
+};
+
+const rememberActivationBenchmarkFixtureWindow = async (windowId: number): Promise<void> => {
+  const storedWindowIds = await chrome.storage.session.get(ACTIVATION_BENCHMARK_WINDOW_IDS_KEY);
+  const ownedWindowIds = Array.isArray(storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY])
+    ? (storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY] as number[]).filter(Number.isInteger)
+    : [];
+  await chrome.storage.session.set({
+    [ACTIVATION_BENCHMARK_WINDOW_IDS_KEY]: [...new Set([...ownedWindowIds, windowId])],
+  });
+};
 
 const tabPreviewCache = new TabPreviewCache(
   {
@@ -144,6 +220,10 @@ const configureActionForOpenTabs = async (): Promise<void> => {
     ),
   );
 };
+
+if (activationBenchmarkBaseline) {
+  void configureActionForOpenTabs().catch(() => undefined);
+}
 
 const openPopup = async (
   tabId: number,
@@ -330,8 +410,9 @@ const openCommandCenter = async (
   requestedTabId?: number,
   fromShortcut = false,
   shortcutTab?: chrome.tabs.Tab,
+  startedAtOverride?: number,
 ): Promise<void> => {
-  const openedAt = Date.now();
+  const openedAt = Number.isFinite(startedAtOverride) ? Number(startedAtOverride) : Date.now();
   let openingWindowId: number | undefined;
   let openingLaunch: { tabId: number; pendingCycles: number; startedAt: number } | undefined;
   let releaseKey: TabSwitcherReleaseKey | null = null;
@@ -635,6 +716,265 @@ chrome.tabs.onCreated.addListener((tab) => {
 });
 
 chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse) => {
+  if (
+    activationBenchmarkMode &&
+    typeof rawMessage === 'object' &&
+    rawMessage !== null &&
+    'action' in rawMessage &&
+    rawMessage.action === 'benchmark:warmup'
+  ) {
+    if (!isBenchmarkFixtureSender(sender)) {
+      sendResponse({ success: false, error: 'Benchmark warmup requires the top-level local fixture page.' });
+      return false;
+    }
+
+    sendResponse({ success: true });
+    return false;
+  }
+
+  if (
+    activationBenchmarkMode &&
+    typeof rawMessage === 'object' &&
+    rawMessage !== null &&
+    'action' in rawMessage &&
+    rawMessage.action === 'benchmark:fixture-layout'
+  ) {
+    const layout = 'layout' in rawMessage ? rawMessage.layout : undefined;
+    const sourceTabId = sender.tab?.id;
+
+    if (
+      !isBenchmarkFixtureSender(sender) ||
+      !Number.isInteger(sourceTabId) ||
+      (layout !== 'single' && layout !== 'four' && layout !== 'hundred' && layout !== 'cleanup')
+    ) {
+      sendResponse({ success: false, error: 'Fixture layout requires the top-level local benchmark page.' });
+      return false;
+    }
+
+    void (async () => {
+      const sourceTab = await chrome.tabs.get(Number(sourceTabId));
+      const mainWindowId = sourceTab.windowId;
+      if (mainWindowId === undefined) {
+        throw new Error('Fixture tab has no normal window.');
+      }
+      const allTabs = await chrome.tabs.query({});
+      let fixtureTabs = allTabs.filter((tab) => {
+        try {
+          const tabUrl = tab.url ? new URL(tab.url) : undefined;
+          return tabUrl?.origin === activationBenchmarkOrigin && tabUrl.pathname === '/fixture';
+        } catch {
+          return false;
+        }
+      });
+      const fixtureIndex = (tab: chrome.tabs.Tab): number | undefined => {
+        try {
+          const tabUrl = tab.url ? new URL(tab.url) : undefined;
+          const value = tabUrl?.searchParams.get('tab');
+          return value !== null && value !== undefined && /^\d+$/.test(value) ? Number(value) : undefined;
+        } catch {
+          return undefined;
+        }
+      };
+      const activeFixtureTabId = Number(sourceTabId);
+
+      if (layout === 'single' || layout === 'four') {
+        const existingFixtureIndices = new Set(fixtureTabs.map(fixtureIndex).filter(Number.isInteger));
+        const missingFixtureIndices = Array.from({ length: 999 }, (_, index) => index).filter(
+          (index) => !existingFixtureIndices.has(index),
+        );
+        for (let index = 0; index < missingFixtureIndices.length; index += 50) {
+          const batch = missingFixtureIndices.slice(index, index + 50);
+          await Promise.all(
+            batch.map((tabIndex) =>
+              chrome.tabs.create({
+                windowId: mainWindowId,
+                active: false,
+                url: `${activationBenchmarkOrigin}/fixture?tab=${String(tabIndex).padStart(4, '0')}&cell=fixture&extensionId=${chrome.runtime.id}`,
+              }),
+            ),
+          );
+        }
+        const expectedFixtureIndices = Array.from({ length: 999 }, (_, index) => index);
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          fixtureTabs = (await chrome.tabs.query({})).filter((tab) => {
+            try {
+              const tabUrl = tab.url ? new URL(tab.url) : undefined;
+              return tabUrl?.origin === activationBenchmarkOrigin && tabUrl.pathname === '/fixture';
+            } catch {
+              return false;
+            }
+          });
+          const availableFixtureIndices = new Set(fixtureTabs.map(fixtureIndex).filter(Number.isInteger));
+          if (expectedFixtureIndices.every((index) => availableFixtureIndices.has(index))) {
+            break;
+          }
+          if (attempt === 99) {
+            const missing = expectedFixtureIndices.filter((index) => !availableFixtureIndices.has(index));
+            throw new Error(
+              `Timed out waiting for ${missing.length} fixture tabs: ${missing.slice(0, 10).join(', ')}.`,
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      }
+
+      if (layout === 'cleanup') {
+        const removeIds = fixtureTabs.flatMap((tab) =>
+          tab.id !== undefined && tab.id !== activeFixtureTabId ? [tab.id] : [],
+        );
+        for (let index = 0; index < removeIds.length; index += 250) {
+          await chrome.tabs.remove(removeIds.slice(index, index + 250));
+        }
+
+        const closedFixtureWindows = await closeActivationBenchmarkFixtureWindows(mainWindowId);
+
+        sendResponse({
+          success: true,
+          layout,
+          mainWindowId,
+          sourceTabId,
+          removed: removeIds.length,
+          closedFixtureWindows,
+        });
+        return;
+      }
+
+      if (layout === 'single' || layout === 'hundred') {
+        const expectedCount = layout === 'hundred' ? 100 : 1000;
+        const keep = new Set<number>([activeFixtureTabId]);
+        for (let index = 0; index < expectedCount - 1; index += 1) {
+          const tab =
+            fixtureTabs.find(
+              (candidate) =>
+                candidate.id !== undefined && candidate.windowId === mainWindowId && fixtureIndex(candidate) === index,
+            ) ?? fixtureTabs.find((candidate) => candidate.id !== undefined && fixtureIndex(candidate) === index);
+          if (tab?.id !== undefined) {
+            keep.add(tab.id);
+          }
+        }
+        if (keep.size !== expectedCount) {
+          throw new Error(`Expected ${expectedCount} single-window fixture tabs; selected ${keep.size}.`);
+        }
+
+        const moveIds = fixtureTabs.flatMap((tab) =>
+          tab.id !== undefined && keep.has(tab.id) && tab.windowId !== mainWindowId ? [tab.id] : [],
+        );
+        for (let index = 0; index < moveIds.length; index += 250) {
+          await chrome.tabs.move(moveIds.slice(index, index + 250), { windowId: mainWindowId, index: -1 });
+        }
+
+        const removeIds = fixtureTabs.flatMap((tab) => (tab.id !== undefined && !keep.has(tab.id) ? [tab.id] : []));
+        if (removeIds.length) {
+          await chrome.tabs.remove(removeIds);
+        }
+
+        const closedFixtureWindows = await closeActivationBenchmarkFixtureWindows(mainWindowId);
+
+        sendResponse({
+          success: true,
+          layout,
+          mainWindowId,
+          kept: keep.size,
+          removed: removeIds.length,
+          closedFixtureWindows,
+        });
+        return;
+      }
+
+      const keepInMain = new Set<number>([activeFixtureTabId]);
+      for (let index = 0; index <= 248; index += 1) {
+        const tab = fixtureTabs.find(
+          (candidate) =>
+            candidate.id !== undefined && candidate.windowId === mainWindowId && fixtureIndex(candidate) === index,
+        );
+        if (tab?.id !== undefined) {
+          keepInMain.add(tab.id);
+        }
+      }
+      const movable = fixtureTabs
+        .filter((tab) => tab.id !== undefined && !keepInMain.has(tab.id))
+        .sort((left, right) => (fixtureIndex(left) ?? 0) - (fixtureIndex(right) ?? 0));
+      if (keepInMain.size !== 250 || movable.length !== 750) {
+        throw new Error(
+          `Expected 250 main-window tabs and 750 movable tabs; got ${keepInMain.size} and ${movable.length}.`,
+        );
+      }
+
+      const targets: number[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        const fixtureWindow = await chrome.windows.create({ focused: false });
+        if (!fixtureWindow || fixtureWindow.id === undefined) {
+          throw new Error('Chrome did not create a fixture window.');
+        }
+        targets.push(fixtureWindow.id);
+        await rememberActivationBenchmarkFixtureWindow(fixtureWindow.id);
+      }
+
+      for (let index = 0; index < targets.length; index += 1) {
+        const targetWindowId = targets[index];
+        if (targetWindowId === undefined) {
+          throw new Error(`Fixture window ${index + 1} was not created.`);
+        }
+        const group = movable
+          .slice(index * 250, (index + 1) * 250)
+          .flatMap((tab) => (tab.id === undefined ? [] : [tab.id]));
+        await chrome.tabs.move(group, { windowId: targetWindowId, index: -1 });
+      }
+      const postMoveTabs = await chrome.tabs.query({});
+      const emptyNewTabs = postMoveTabs.flatMap((tab) =>
+        tab.id !== undefined && targets.includes(Number(tab.windowId)) && tab.url === 'chrome://newtab/'
+          ? [tab.id]
+          : [],
+      );
+      if (emptyNewTabs.length) {
+        await chrome.tabs.remove(emptyNewTabs);
+      }
+
+      sendResponse({
+        success: true,
+        layout,
+        mainWindowId,
+        fixtureWindows: [mainWindowId, ...targets],
+        keptInMain: 250,
+        moved: movable.length,
+      });
+    })().catch((error: unknown) => sendResponse({ success: false, error: normalizeError(error) }));
+    return true;
+  }
+
+  if (
+    activationBenchmarkMode &&
+    typeof rawMessage === 'object' &&
+    rawMessage !== null &&
+    'action' in rawMessage &&
+    rawMessage.action === 'benchmark:activate'
+  ) {
+    const mode = 'mode' in rawMessage ? rawMessage.mode : undefined;
+    const startedAt = 'startedAt' in rawMessage ? rawMessage.startedAt : undefined;
+    if (!isBenchmarkFixtureSender(sender) || (mode !== 'commands' && mode !== 'tabs')) {
+      sendResponse({
+        success: false,
+        error: 'Benchmark activation requires the top-level local fixture content script.',
+      });
+      return false;
+    }
+
+    void (async () => {
+      const tabId = Number(sender.tab?.id);
+      const targetTab = await chrome.tabs.get(tabId);
+      const targetUrl = targetTab.url ? new URL(targetTab.url) : undefined;
+      if (!targetUrl || targetUrl.origin !== activationBenchmarkOrigin || targetUrl.pathname !== '/fixture') {
+        sendResponse({ success: false, error: 'Benchmark activation requires the local fixture tab.' });
+        return;
+      }
+
+      const activationStartedAt = Number.isFinite(startedAt) ? Number(startedAt) : Date.now();
+      await openCommandCenter(mode, tabId, true, targetTab, activationStartedAt);
+      sendResponse({ success: true });
+    })().catch((error: unknown) => sendResponse({ success: false, error: normalizeError(error) }));
+    return true;
+  }
+
   void handleRequest(rawMessage, sender)
     .then((data) => sendResponse(respond(data)))
     .catch((error: unknown) => sendResponse({ success: false, error: normalizeError(error) }));

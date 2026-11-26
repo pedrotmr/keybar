@@ -2173,10 +2173,17 @@ test('background message and command contracts', async () => {
       actionCalls.length = 0;
       event.listeners[0]();
       await new Promise((resolve) => setTimeout(resolve, 0));
-      assert.equal(
-        actionCalls.filter((call) => call.type === 'setPopup').length,
-        startupTabs.length,
-        `${name} still configures the action for open tabs`,
+      const configuredPopups = actionCalls
+        .filter((call) => call.type === 'setPopup')
+        .map(({ tabId, popup }) => ({ tabId, popup }))
+        .sort((left, right) => left.tabId - right.tabId);
+      assert.deepEqual(
+        configuredPopups,
+        [
+          { tabId: activeBackgroundTab.id, popup: artifacts.popupHtml },
+          { tabId: 9, popup: '' },
+        ].sort((left, right) => left.tabId - right.tabId),
+        `${name} configures the popup for each restricted and ordinary tab`,
       );
     }
 
@@ -2209,6 +2216,19 @@ test('background message and command contracts', async () => {
       'the Command Bar shortcut opens its popup on Chrome-native pages',
     );
     assert.equal(sessionStore.nextPaletteMode, 'commands', 'the native-page popup receives Command Bar mode');
+
+    actionCalls.length = 0;
+    globalThis.chrome.action.onClicked.listeners[0](activeBackgroundTab);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(
+      actionCalls.some(
+        (call) =>
+          call.type === 'setPopup' && call.tabId === activeBackgroundTab.id && call.popup === artifacts.popupHtml,
+      ),
+      'a cold toolbar click on a Chrome-native page restores its popup route',
+    );
+    assert.ok(actionCalls.some((call) => call.type === 'openPopup'));
+    assert.equal(sessionStore.nextPaletteMode, 'commands');
 
     const updatedListener = browserEvents.onUpdated.listeners.at(-1);
     updatedListener(

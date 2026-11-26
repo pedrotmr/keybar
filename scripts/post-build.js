@@ -12,6 +12,8 @@ const distDir = path.join(projectRoot, 'dist');
 const sourceManifestPath = path.join(projectRoot, 'src', 'manifest.json');
 const manifestPath = path.join(distDir, 'manifest.json');
 const manifest = JSON.parse(fs.readFileSync(sourceManifestPath, 'utf8'));
+const activationBenchmark = process.argv.includes('--activation-benchmark');
+const activationBenchmarkTrigger = 'activation-benchmark-trigger.js';
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
 const artifacts = JSON.parse(fs.readFileSync(path.join(projectRoot, 'extension-artifacts.json'), 'utf8'));
 const noticesPath = artifacts.notices;
@@ -52,6 +54,16 @@ manifest.web_accessible_resources = [
     matches: artifacts.fonts.matches,
   },
 ];
+if (activationBenchmark) {
+  fs.copyFileSync(path.join(__dirname, activationBenchmarkTrigger), path.join(distDir, activationBenchmarkTrigger));
+  manifest.content_scripts = [
+    {
+      matches: ['http://127.0.0.1:8770/fixture*'],
+      js: [activationBenchmarkTrigger],
+      run_at: 'document_start',
+    },
+  ];
+}
 
 if (!fs.existsSync(path.join(distDir, manifest.background.service_worker))) {
   throw new Error(`Build output is missing ${manifest.background.service_worker}`);
@@ -82,8 +94,17 @@ for (const file of contentBundles) {
 const allowedHosts = new Set(['http://*/*', 'https://*/*']);
 const hostPermissions = manifest.host_permissions ?? [];
 const optionalHostPermissions = manifest.optional_host_permissions ?? [];
+const validBenchmarkContentScript =
+  activationBenchmark &&
+  manifest.content_scripts?.length === 1 &&
+  manifest.content_scripts[0].matches?.length === 1 &&
+  manifest.content_scripts[0].matches[0] === 'http://127.0.0.1:8770/fixture*' &&
+  manifest.content_scripts[0].js?.length === 1 &&
+  manifest.content_scripts[0].js[0] === activationBenchmarkTrigger &&
+  manifest.content_scripts[0].run_at === 'document_start' &&
+  fs.existsSync(path.join(distDir, activationBenchmarkTrigger));
 if (
-  manifest.content_scripts?.length ||
+  (manifest.content_scripts?.length && !validBenchmarkContentScript) ||
   hostPermissions.some((pattern) => !allowedHosts.has(pattern)) ||
   optionalHostPermissions.some((pattern) => !allowedHosts.has(pattern)) ||
   !hostPermissions.includes('http://*/*') ||

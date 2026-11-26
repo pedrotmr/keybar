@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 
-const host = process.env.KEYBAR_BENCH_HOST ?? '127.0.0.1';
-const port = Number(process.env.KEYBAR_BENCH_PORT ?? 8770);
+const host = '127.0.0.1';
+const port = 8770;
 const events = [];
 
 const escapeHtml = (value) =>
@@ -11,7 +11,7 @@ const escapeHtml = (value) =>
   });
 
 const server = createServer((request, response) => {
-  const url = new URL(request.url ?? '/', `http://${host}:${port}`);
+  const url = new URL(request.url ?? '/', 'http://127.0.0.1');
 
   if (url.pathname === '/benchmarks/clear' && request.method === 'POST') {
     events.length = 0;
@@ -58,25 +58,36 @@ const server = createServer((request, response) => {
   }
 
   const index = Math.max(0, Math.floor(Number(url.searchParams.get('tab')) || 0));
+  const extensionId = url.searchParams.get('extensionId') ?? 'lnflcdainoeimligocpijlehbfiokfmb';
+  if (!/^[a-p]{32}$/.test(extensionId)) {
+    response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end('invalid extension id');
+    return;
+  }
+
   const title = `Keybar benchmark tab ${String(index).padStart(4, '0')}`;
   const probeScript = `
     (() => {
+      const extensionId = ${JSON.stringify(extensionId)};
       const storageKey = 'keybarActivationBenchmarkSample';
       const sample = Number(localStorage.getItem(storageKey) || '0') + 1;
       localStorage.setItem(storageKey, String(sample));
       const events = [];
-      const hostId = 'lnflcdainoeimligocpijlehbfiokfmb-command-center-surface';
+      const hostId = extensionId + '-command-center-surface';
+      const cell = new URL(location.href).searchParams.get('cell') || localStorage.getItem('keybarActivationBenchmarkCell') || 'unspecified';
       let sawHost = false;
       let wasVisible = false;
       let activation = 0;
       let focused = false;
+      let activationStartedAt = null;
       const record = (name, details = {}) => {
         const event = {
-          cell: localStorage.getItem('keybarActivationBenchmarkCell') || 'unspecified',
+          cell,
           sample,
           name,
           epochMs: performance.timeOrigin + performance.now(),
           perfMs: performance.now(),
+          startedAt: activationStartedAt,
           ...details,
         };
         events.push(event);
@@ -102,8 +113,8 @@ const server = createServer((request, response) => {
         if (visible && !wasVisible) {
           activation += 1;
           focused = false;
-          record('surfaceShown', { activation });
-          requestAnimationFrame(() => record('firstVisibleFrame', { activation }));
+          activationStartedAt = Number(host.dataset.keybarActivationStartedAt) || null;
+          record('hostShown', { activation });
         } else if (!visible && wasVisible) {
           record('surfaceHidden', { activation });
         }
@@ -116,14 +127,26 @@ const server = createServer((request, response) => {
         childList: true,
         subtree: true,
       });
-      document.addEventListener('focusin', () => {
-        if (!focused && wasVisible) {
+      document.addEventListener('focusin', (event) => {
+        const host = document.getElementById(hostId);
+        if (!focused && host && isVisible(host) && event.composedPath().includes(host)) {
           focused = true;
           record('focused', { activation });
         }
       }, true);
+      window.addEventListener('keybar:activation-benchmark-stage', (event) => {
+        const { stage, surface } = event.detail || {};
+        if (stage === 'surfaceRendered') {
+          record('surfaceShown', { activation, surface });
+        }
+        if (stage === 'firstResultVisible') {
+          record('firstResultVisible', { activation, surface });
+          document.documentElement.dataset.keybarBenchmarkResultVisible = String(activation);
+        }
+      });
+      document.documentElement.setAttribute('data-keybar-activation-benchmark', '');
       window.__keybarColdActivationProbe = {
-        read: () => ({ cell: localStorage.getItem('keybarActivationBenchmarkCell') || 'unspecified', sample, events }),
+        read: () => ({ cell, sample, events }),
         disconnect: () => observer.disconnect(),
       };
       inspect();
