@@ -3,10 +3,11 @@
  *   return await runKeybarColdActivationMcp(browser, { surface: 'command-bar', count: 2 });
  *
  * For split sampling, pass `waitForResult: false`, retain its `activationId`,
- * `pageId`, `startedPerfMs`, and verified worker fields, then pass those fields
- * to `collectKeybarColdActivationMcp` in a later run. Reused-document warm
- * batches require a one-sample `keepDocument` activation first; close its
- * surface with Escape before setting `reuseDocument: true`.
+ * `pageId`, `startedPerfMs`, `restoreUrl`, `keepDocument`, and verified worker
+ * fields, then pass those fields to `collectKeybarColdActivationMcp` in a later
+ * run. Reused-document warm batches require a one-sample `keepDocument`
+ * activation first; close its surface with Escape before setting
+ * `reuseDocument: true`.
  *
  * The runner keeps the fixture active, stops Keybar from the background
  * serviceworker-internals page, and sends a test-only activation through the
@@ -511,6 +512,8 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
           startedAt: trigger.value.startedAt,
           startedPerfMs: trigger.value.startedPerfMs,
           activationId: trigger.value.activationId,
+          restoreUrl: originalFixtureUrl,
+          keepDocument,
         };
       }
 
@@ -635,6 +638,8 @@ export const collectKeybarColdActivationMcp = async (
     pageId,
     activationId,
     startedPerfMs,
+    restoreUrl,
+    keepDocument = false,
     surface = 'command-bar',
     cell = 'unspecified',
     resultTimeoutMs = 25000,
@@ -658,90 +663,99 @@ export const collectKeybarColdActivationMcp = async (
   if (typeof activationId !== 'string' || !activationId) {
     throw new Error('Collector needs the activation ID returned by the activation runner');
   }
+  if (typeof restoreUrl !== 'string' || typeof keepDocument !== 'boolean') {
+    throw new Error('Collector needs the restore URL and document-retention flag returned by the activation runner');
+  }
 
   const fixture = browser.page(pageId);
-  const wait = await fixture.waitForSelector('html[data-keybar-benchmark-result-after-paint-opportunity-at]', {
-    timeout: resultTimeoutMs,
-  });
-  if (!wait.matched) {
-    const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+  try {
+    const wait = await fixture.waitForSelector('html[data-keybar-benchmark-result-after-paint-opportunity-at]', {
+      timeout: resultTimeoutMs,
+    });
+    if (!wait.matched) {
+      const partial = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+      return {
+        ok: false,
+        pending: false,
+        failedIndex: index,
+        surface,
+        cell,
+        error: `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial.value)}`,
+      };
+    }
+
+    const triggerComplete = await fixture.waitForSelector('html[data-keybar-benchmark-trigger-complete="true"]', {
+      timeout: resultTimeoutMs,
+    });
+    if (!triggerComplete.matched) {
+      throw new Error('Benchmark activation response did not settle before the next sample');
+    }
+
+    const probeResult = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
+    const probe = probeResult.value;
+    if (!probe) {
+      throw new Error('Fixture probe disappeared before results could be read');
+    }
+
+    const events = probe.events.filter((event) => event.activationId === activationId);
+    const activation = events.find((event) => event.name === 'hostShown')?.activation;
+    const hostShown = events.find((event) => event.name === 'hostShown');
+    const hostInjected = probe.events.find(
+      (event) => event.name === 'hostInjected' && event.activationId === activationId,
+    );
+    const surfaceShown = events.find((event) => event.name === 'surfaceShown');
+    const focused = events.find((event) => event.name === 'focused' && event.activation === activation);
+    const firstResultAfterPaintOpportunity = events.find((event) => event.name === 'firstResultAfterPaintOpportunity');
+    const firstResultAfterPaintOpportunityAt = firstResultAfterPaintOpportunity?.perfMs;
+    if (
+      !activation ||
+      (!verifiedWarm && !hostInjected) ||
+      !hostShown ||
+      !surfaceShown ||
+      surfaceShown.surface !== surface ||
+      !focused ||
+      !firstResultAfterPaintOpportunity ||
+      firstResultAfterPaintOpportunity.surface !== surface ||
+      firstResultAfterPaintOpportunity.activation !== activation ||
+      !Number.isFinite(firstResultAfterPaintOpportunityAt)
+    ) {
+      throw new Error(
+        `Incomplete activation stages: ${JSON.stringify({ hostShown, surfaceShown, focused, firstResultAfterPaintOpportunity, firstResultAfterPaintOpportunityAt })}`,
+      );
+    }
+
+    if (probe.triggerResponse?.activationId !== activationId) {
+      throw new Error(
+        `Benchmark response did not match activation ${activationId}: ${JSON.stringify(probe.triggerResponse)}`,
+      );
+    }
+    if (probe.triggerResponse.response?.success !== true) {
+      throw new Error(`Benchmark activation was rejected: ${JSON.stringify(probe.triggerResponse.response)}`);
+    }
+
+    const duration = (event) => Number((event.perfMs - startedPerfMs).toFixed(1));
     return {
-      ok: false,
+      ok: true,
       pending: false,
-      failedIndex: index,
-      surface,
-      cell,
-      error: `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial.value)}`,
-    };
-  }
-
-  const triggerComplete = await fixture.waitForSelector('html[data-keybar-benchmark-trigger-complete="true"]', {
-    timeout: resultTimeoutMs,
-  });
-  if (!triggerComplete.matched) {
-    throw new Error('Benchmark activation response did not settle before the next sample');
-  }
-
-  const probeResult = await fixture.evaluateInPage('return window.__keybarColdActivationProbe?.read?.() ?? null');
-  const probe = probeResult.value;
-  if (!probe) {
-    throw new Error('Fixture probe disappeared before results could be read');
-  }
-
-  const events = probe.events.filter((event) => event.activationId === activationId);
-  const activation = events.find((event) => event.name === 'hostShown')?.activation;
-  const hostShown = events.find((event) => event.name === 'hostShown');
-  const hostInjected = probe.events.find(
-    (event) => event.name === 'hostInjected' && event.activationId === activationId,
-  );
-  const surfaceShown = events.find((event) => event.name === 'surfaceShown');
-  const focused = events.find((event) => event.name === 'focused' && event.activation === activation);
-  const firstResultAfterPaintOpportunity = events.find((event) => event.name === 'firstResultAfterPaintOpportunity');
-  const firstResultAfterPaintOpportunityAt = firstResultAfterPaintOpportunity?.perfMs;
-  if (
-    !activation ||
-    (!verifiedWarm && !hostInjected) ||
-    !hostShown ||
-    !surfaceShown ||
-    surfaceShown.surface !== surface ||
-    !focused ||
-    !firstResultAfterPaintOpportunity ||
-    firstResultAfterPaintOpportunity.surface !== surface ||
-    firstResultAfterPaintOpportunity.activation !== activation ||
-    !Number.isFinite(firstResultAfterPaintOpportunityAt)
-  ) {
-    throw new Error(
-      `Incomplete activation stages: ${JSON.stringify({ hostShown, surfaceShown, focused, firstResultAfterPaintOpportunity, firstResultAfterPaintOpportunityAt })}`,
-    );
-  }
-
-  if (probe.triggerResponse?.activationId !== activationId) {
-    throw new Error(
-      `Benchmark response did not match activation ${activationId}: ${JSON.stringify(probe.triggerResponse)}`,
-    );
-  }
-  if (probe.triggerResponse.response?.success !== true) {
-    throw new Error(`Benchmark activation was rejected: ${JSON.stringify(probe.triggerResponse.response)}`);
-  }
-
-  const duration = (event) => Number((event.perfMs - startedPerfMs).toFixed(1));
-  return {
-    ok: true,
-    pending: false,
-    sample: {
-      index,
-      surface,
-      cell,
-      fixtureSample: probe.sample,
-      workerStopped: verifiedCold,
-      workerWarm: verifiedWarm,
-      latencyMs: {
-        hostInjected: hostInjected ? duration(hostInjected) : null,
-        hostShown: duration(hostShown),
-        surfaceShown: duration(surfaceShown),
-        focused: duration(focused),
-        firstResultAfterPaintOpportunity: Number((firstResultAfterPaintOpportunityAt - startedPerfMs).toFixed(1)),
+      sample: {
+        index,
+        surface,
+        cell,
+        fixtureSample: probe.sample,
+        workerStopped: verifiedCold,
+        workerWarm: verifiedWarm,
+        latencyMs: {
+          hostInjected: hostInjected ? duration(hostInjected) : null,
+          hostShown: duration(hostShown),
+          surfaceShown: duration(surfaceShown),
+          focused: duration(focused),
+          firstResultAfterPaintOpportunity: Number((firstResultAfterPaintOpportunityAt - startedPerfMs).toFixed(1)),
+        },
       },
-    },
-  };
+    };
+  } finally {
+    if (!keepDocument) {
+      await fixture.goto(restoreUrl).catch(() => undefined);
+    }
+  }
 };
