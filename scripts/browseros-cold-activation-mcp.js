@@ -741,8 +741,12 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
   } catch (error) {
     lockReleaseFailure = error instanceof Error ? error : new Error(String(error));
   }
+  const cleanupErrors = [
+    restorationFailure ? `Could not restore the fixture to ${originalFixtureUrl}: ${restorationFailure.message}` : null,
+    lockReleaseFailure ? `Could not release the fixture lock: ${lockReleaseFailure.message}` : null,
+  ].filter(Boolean);
   return {
-    ok: true,
+    ok: cleanupErrors.length === 0,
     surface,
     cell,
     cold,
@@ -754,6 +758,7 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
     p95RequiresAtLeast: 20,
     ...(restorationFailure ? { fixtureRestored: false, restorationError: restorationFailure.message } : {}),
     ...(lockReleaseFailure ? { lockReleased: false, lockReleaseError: lockReleaseFailure.message } : {}),
+    ...(cleanupErrors.length ? { error: `Samples collected, but cleanup failed: ${cleanupErrors.join('; ')}` } : {}),
     samples,
   };
 };
@@ -970,7 +975,6 @@ const collectKeybarColdActivationMcp = async (
       fixtureRestored: false,
       restorationError: restorationFailure.message,
     };
-    restorationFailure = null;
   }
   if (lockReleaseFailure && !collectionFailure && result?.ok === true) {
     result = {
@@ -978,6 +982,18 @@ const collectKeybarColdActivationMcp = async (
       lockReleased: false,
       lockReleaseError: lockReleaseFailure.message,
     };
+  }
+  if (!collectionFailure && result?.ok === true && (restorationFailure || lockReleaseFailure)) {
+    const cleanupErrors = [
+      restorationFailure ? `Could not restore the fixture to ${restoreUrl}: ${restorationFailure.message}` : null,
+      lockReleaseFailure ? `Could not release the fixture lock: ${lockReleaseFailure.message}` : null,
+    ].filter(Boolean);
+    result = {
+      ...result,
+      ok: false,
+      error: `Sample collected, but cleanup failed: ${cleanupErrors.join('; ')}`,
+    };
+    restorationFailure = null;
     lockReleaseFailure = null;
   }
 

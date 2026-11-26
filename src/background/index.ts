@@ -66,6 +66,18 @@ const isBenchmarkFixtureSender = (sender: chrome.runtime.MessageSender): boolean
 const isActivationBenchmarkPlaceholderUrl = (url?: string): boolean =>
   url === undefined || url === '' || url === 'about:blank' || url === 'chrome://newtab/';
 
+const isKnownActivationBenchmarkPlaceholderUrl = (url?: string): boolean =>
+  url === 'about:blank' || url === 'chrome://newtab/';
+
+const isDisposableActivationBenchmarkPlaceholderTab = (tab: chrome.tabs.Tab): boolean => {
+  const urlsArePlaceholders =
+    isActivationBenchmarkPlaceholderUrl(tab.url) &&
+    (tab.pendingUrl === undefined || isActivationBenchmarkPlaceholderUrl(tab.pendingUrl));
+  const hasKnownPlaceholderUrl =
+    isKnownActivationBenchmarkPlaceholderUrl(tab.url) || isKnownActivationBenchmarkPlaceholderUrl(tab.pendingUrl);
+  return urlsArePlaceholders && hasKnownPlaceholderUrl;
+};
+
 const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Promise<number> => {
   const storedWindowIds = await chrome.storage.session.get(ACTIVATION_BENCHMARK_WINDOW_IDS_KEY);
   const ownedWindowIds = Array.isArray(storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY])
@@ -82,9 +94,7 @@ const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Pro
     if (!window) {
       continue;
     }
-    const isPlaceholderTab = (tab: chrome.tabs.Tab): boolean =>
-      isActivationBenchmarkPlaceholderUrl(tab.url) &&
-      (tab.pendingUrl === undefined || isActivationBenchmarkPlaceholderUrl(tab.pendingUrl));
+    const isPlaceholderTab = isDisposableActivationBenchmarkPlaceholderTab;
     const tabs = window.tabs ?? [];
     if (tabs.some((tab) => !isPlaceholderTab(tab))) {
       remainingWindowIds.push(windowId);
