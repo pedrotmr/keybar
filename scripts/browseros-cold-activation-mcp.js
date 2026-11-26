@@ -1,12 +1,14 @@
 /*
  * Paste this file into BrowserOS neo's `run` tool and append:
- *   return await runKeybarColdActivationMcp(browser, { surface: 'command-bar', count: 20 });
+ *   return await globalThis.KeybarColdActivationBenchmark.run(browser, {
+ *     surface: 'command-bar', count: 20,
+ *   });
  *
  * For split sampling, retain the complete pending result and pass it unchanged:
- *   const pending = await runKeybarColdActivationMcp(browser, {
+ *   const pending = await globalThis.KeybarColdActivationBenchmark.run(browser, {
  *     surface: 'command-bar', count: 1, waitForResult: false,
  *   });
- *   return await collectKeybarColdActivationMcp(browser, pending);
+ *   return await globalThis.KeybarColdActivationBenchmark.collect(browser, pending);
  * Reused-document warm batches require a one-sample `keepDocument` activation
  * first; close its surface with Escape before setting `reuseDocument: true`.
  *
@@ -25,7 +27,7 @@ const defaultBenchmarkOptions = {
   workerStopTimeoutMs: 25000,
 };
 
-export const setKeybarFixtureLayoutMcp = async (
+const setKeybarFixtureLayoutMcp = async (
   browser,
   { layout, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin, resultTimeoutMs = 25000 },
 ) => {
@@ -78,7 +80,7 @@ export const setKeybarFixtureLayoutMcp = async (
   return { ok: true, layout, ...result.value };
 };
 
-export const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOptions) => {
+const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOptions) => {
   const {
     extensionId = 'lnflcdainoeimligocpijlehbfiokfmb',
     fixtureOrigin = 'http://127.0.0.1:8770',
@@ -756,7 +758,7 @@ export const runKeybarColdActivationMcp = async (browser, options = defaultBench
   };
 };
 
-export const collectKeybarColdActivationMcp = async (
+const collectKeybarColdActivationMcp = async (
   browser,
   {
     pageId,
@@ -992,3 +994,9 @@ export const collectKeybarColdActivationMcp = async (
 
   return result;
 };
+
+globalThis.KeybarColdActivationBenchmark = Object.freeze({
+  setLayout: setKeybarFixtureLayoutMcp,
+  run: runKeybarColdActivationMcp,
+  collect: collectKeybarColdActivationMcp,
+});

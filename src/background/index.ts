@@ -994,11 +994,13 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
         await chrome.tabs.move(group, { windowId: targetWindowId, index: -1 });
       }
       const postMoveTabs = await chrome.tabs.query({});
+      const isPlaceholderUrl = (url?: string): boolean =>
+        url === undefined || url === '' || url === 'about:blank' || url === 'chrome://newtab/';
       const emptyNewTabs = postMoveTabs.flatMap((tab) =>
         tab.id !== undefined &&
         targets.includes(Number(tab.windowId)) &&
-        tab.url === 'chrome://newtab/' &&
-        (tab.pendingUrl === undefined || tab.pendingUrl === 'chrome://newtab/')
+        isPlaceholderUrl(tab.url) &&
+        (tab.pendingUrl === undefined || isPlaceholderUrl(tab.pendingUrl))
           ? [tab.id]
           : [],
       );
@@ -1037,6 +1039,16 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
         throw new Error(
           `Expected four windows with 250 fixture tabs each; got ${JSON.stringify([...tabsByWindow.entries()])}.`,
         );
+      }
+      const unexpectedTargetTabs = await Promise.all(
+        targets.map(async (windowId) => {
+          const tabs = await chrome.tabs.query({ windowId });
+          return tabs.length === 250 ? null : { windowId, tabCount: tabs.length };
+        }),
+      );
+      const extraTabs = unexpectedTargetTabs.filter(Boolean);
+      if (extraTabs.length) {
+        throw new Error(`New fixture windows contain unexpected tabs: ${JSON.stringify(extraTabs)}`);
       }
 
       sendResponse({

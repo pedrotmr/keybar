@@ -74,14 +74,16 @@ export function ResultsList({
     }
   }, [items, keyboardNavigationVersion]);
 
+  const selectedItemId = isActivationBenchmarkBuild ? items[selectedIndex]?.id : undefined;
+
   useLayoutEffect(() => {
-    if (!isActivationBenchmarkBuild) {
+    if (!isActivationBenchmarkBuild || !selectedItemId) {
       return;
     }
 
     const selected = listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]') ?? null;
     return reportActivationBenchmarkStage('firstResultAfterPaintOpportunity', 'command-bar', selected);
-  }, [items, selectedIndex]);
+  }, [selectedItemId]);
 
   useLayoutEffect(() => {
     const content = contentRef.current;
