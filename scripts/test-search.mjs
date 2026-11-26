@@ -2225,7 +2225,7 @@ test('background message and command contracts', async () => {
         (call) =>
           call.type === 'setPopup' && call.tabId === activeBackgroundTab.id && call.popup === artifacts.popupHtml,
       ),
-      'a cold toolbar click on a Chrome-native page restores its popup route',
+      'a toolbar click on a Chrome-native page restores its popup route',
     );
     assert.ok(actionCalls.some((call) => call.type === 'openPopup'));
     assert.equal(sessionStore.nextPaletteMode, 'commands');

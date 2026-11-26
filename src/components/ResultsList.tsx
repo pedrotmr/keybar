@@ -4,7 +4,7 @@ import { resultDomId } from './ResultsList/helpers';
 import { EmptyState } from './ResultsList/EmptyState/EmptyState';
 import { MoreGlyph } from './ResultsList/ResultRow/MoreGlyph';
 import { ResultRow } from './ResultsList/ResultRow/ResultRow';
-import { reportActivationBenchmarkStage } from '@/utils/coldActivationBenchmark';
+import { isActivationBenchmarkBuild, reportActivationBenchmarkStage } from '@/utils/coldActivationBenchmark';
 
 export type { ResultsEmptyState } from './ResultsList/types';
 export { displayDetails, resultDomId } from './ResultsList/helpers';
@@ -75,8 +75,12 @@ export function ResultsList({
   }, [items, keyboardNavigationVersion]);
 
   useLayoutEffect(() => {
+    if (!isActivationBenchmarkBuild) {
+      return;
+    }
+
     const selected = listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]') ?? null;
-    return reportActivationBenchmarkStage('firstResultVisible', 'command-bar', selected);
+    return reportActivationBenchmarkStage('firstResultAfterPaintOpportunity', 'command-bar', selected);
   }, [items, selectedIndex]);
 
   useLayoutEffect(() => {

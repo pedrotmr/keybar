@@ -5,7 +5,6 @@ import { loadProductFontForPage } from '@/utils/installProductFont';
 import { wasTabSwitcherModifierReleasedAfter } from '@/utils/tabSwitcherKeyRelease';
 import type { TabSwitcherReleaseKey } from '@/utils/tabSwitcherKeyRelease';
 import type { PaletteTabsSnapshot } from '@/utils/paletteTabsSnapshot';
-import { setActivationBenchmarkStart } from '@/utils/coldActivationBenchmark';
 import { hideHost, setPageInert, showHost } from '../host';
 import type { SurfaceController } from '../types';
 
@@ -90,7 +89,6 @@ export const useOverlayFrame = (controller: SurfaceController): OverlayFrameStat
       isOpenRef.current = true;
       const requestVersion = ++openRequestVersion.current;
       const launchTime = Number.isFinite(requestOpenedAt) && requestOpenedAt > 0 ? requestOpenedAt : Date.now();
-      setActivationBenchmarkStart(controller.host, launchTime);
       setAutoSwitchOnRelease(shouldAutoSwitchOnRelease);
       setOpenedAt(launchTime);
       setReleaseKey(requestReleaseKey);

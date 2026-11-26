@@ -1,21 +1,17 @@
 export type ActivationBenchmarkSurface = 'command-bar' | 'tab-switcher';
-export type ActivationBenchmarkStage = 'surfaceRendered' | 'firstResultVisible';
+export type ActivationBenchmarkStage = 'surfaceFocused' | 'surfaceRendered' | 'firstResultAfterPaintOpportunity';
 
 export const activationBenchmarkAttribute = 'data-keybar-activation-benchmark';
 export const activationBenchmarkStageEvent = 'keybar:activation-benchmark-stage';
+export const isActivationBenchmarkBuild =
+  import.meta.env.MODE === 'activation-benchmark' || import.meta.env.MODE === 'activation-benchmark-baseline';
 
 const isBenchmarkFixture = (): boolean =>
-  import.meta.env.MODE.startsWith('activation-benchmark') &&
+  isActivationBenchmarkBuild &&
   typeof document !== 'undefined' &&
   document.documentElement.hasAttribute(activationBenchmarkAttribute);
 
-export const setActivationBenchmarkStart = (host: HTMLElement, startedAt: number): void => {
-  if (isBenchmarkFixture() && Number.isFinite(startedAt)) {
-    host.setAttribute('data-keybar-activation-started-at', String(startedAt));
-  }
-};
-
-const isPainted = (element: HTMLElement): boolean => {
+const isVisibleForPaint = (element: HTMLElement): boolean => {
   const bounds = element.getBoundingClientRect();
   if (
     bounds.width <= 0 ||
@@ -67,15 +63,19 @@ export const reportActivationBenchmarkStage = (
       return;
     }
 
-    if (isPainted(element)) {
-      if (
-        stage === 'firstResultVisible' &&
-        !document.documentElement.hasAttribute('data-keybar-benchmark-result-visible-at')
-      ) {
-        document.documentElement.setAttribute(
-          'data-keybar-benchmark-result-visible-at',
-          String(performance.timeOrigin + performance.now()),
-        );
+    if (isVisibleForPaint(element)) {
+      const requiredFrames = stage === 'firstResultAfterPaintOpportunity' ? 2 : 1;
+      if (framesChecked < requiredFrames) {
+        frame = window.requestAnimationFrame(checkPaint);
+        return;
+      }
+
+      const resultMarker = 'data-keybar-benchmark-result-after-paint-opportunity-at';
+      if (stage === 'firstResultAfterPaintOpportunity' && document.documentElement.hasAttribute(resultMarker)) {
+        return;
+      }
+      if (stage === 'firstResultAfterPaintOpportunity') {
+        document.documentElement.setAttribute(resultMarker, String(performance.now()));
       }
       window.dispatchEvent(
         new CustomEvent(activationBenchmarkStageEvent, {

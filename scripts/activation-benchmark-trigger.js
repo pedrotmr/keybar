@@ -28,30 +28,33 @@
   }
 
   window.addEventListener(triggerEvent, (event) => {
+    const { mode, startedAt, activationId } = event.detail ?? {};
     document.documentElement?.setAttribute('data-keybar-benchmark-trigger-received', '');
     document.documentElement?.setAttribute(
       'data-keybar-benchmark-trigger-detail',
-      `${event.detail?.mode ?? 'missing-mode'}:${event.detail?.startedAt ?? 'missing-time'}`,
+      `${mode ?? 'missing-mode'}:${startedAt ?? 'missing-time'}`,
     );
     if (pending || !document.documentElement?.hasAttribute('data-keybar-activation-benchmark')) {
       return;
     }
 
-    const { mode, startedAt } = event.detail ?? {};
     if ((mode !== 'commands' && mode !== 'tabs') || !Number.isFinite(startedAt)) {
       return;
     }
 
     pending = true;
     void chrome.runtime
-      .sendMessage({ action: 'benchmark:activate', mode, startedAt })
+      .sendMessage({ action: 'benchmark:activate', mode, startedAt, activationId })
       .then((response) => {
-        window.dispatchEvent(new CustomEvent(resultEvent, { detail: { response } }));
+        window.dispatchEvent(new CustomEvent(resultEvent, { detail: { activationId, response } }));
       })
       .catch((error) => {
         window.dispatchEvent(
           new CustomEvent(resultEvent, {
-            detail: { response: { success: false, error: error instanceof Error ? error.message : String(error) } },
+            detail: {
+              activationId,
+              response: { success: false, error: error instanceof Error ? error.message : String(error) },
+            },
           }),
         );
       })
@@ -84,12 +87,12 @@
   });
 
   window.addEventListener(layoutEvent, (event) => {
+    document.documentElement?.removeAttribute('data-keybar-benchmark-layout-result');
     if (pending || !document.documentElement?.hasAttribute('data-keybar-activation-benchmark')) {
       return;
     }
 
     const { layout } = event.detail ?? {};
-    document.documentElement.removeAttribute('data-keybar-benchmark-layout-result');
     if (layout !== 'single' && layout !== 'four' && layout !== 'hundred' && layout !== 'cleanup') {
       return;
     }
