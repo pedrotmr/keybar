@@ -27,11 +27,21 @@ const defaultBenchmarkOptions = {
   workerStopTimeoutMs: 25000,
 };
 
-const cleanupActivationBenchmark = async ({ fixture, restoreUrl, keepDocument, releaseLock }) => {
+const isActivationBenchmarkFixtureUrl = (value, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin) => {
+  try {
+    const parsed = new URL(value);
+    return parsed.origin === fixtureOrigin && parsed.pathname === '/fixture';
+  } catch {
+    return false;
+  }
+};
+
+const cleanupActivationBenchmark = async ({ fixture, restoreUrl, keepDocument, beforeRestore, releaseLock }) => {
   let restorationFailure = null;
   let lockReleaseFailure = null;
   if (!keepDocument) {
     try {
+      await beforeRestore?.();
       await fixture.goto(restoreUrl);
     } catch (error) {
       restorationFailure = error instanceof Error ? error : new Error(String(error));
@@ -63,7 +73,9 @@ const setKeybarFixtureLayoutMcp = async (
     (windows.windows.length === 1 ? windows.windows[0] : undefined);
   const fixtureInfo = pages.find(
     (page) =>
-      page.windowId === activeWindow?.windowId && page.isActive && page.url.startsWith(`${fixtureOrigin}/fixture`),
+      page.windowId === activeWindow?.windowId &&
+      page.isActive &&
+      isActivationBenchmarkFixtureUrl(page.url, fixtureOrigin),
   );
   if (!fixtureInfo) {
     throw new Error('The active BrowserOS tab is not a Keybar activation fixture page');
@@ -127,7 +139,6 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
   }
 
   const workerScope = `chrome-extension://${extensionId}/`;
-  const fixturePrefix = `${fixtureOrigin}/fixture`;
   const mode = surface === 'tab-switcher' ? 'tabs' : 'commands';
   let pages = await browser.pages.list();
   const windows = await browser.windows({});
@@ -140,7 +151,10 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
 
   const findActiveFixture = () =>
     pages.find(
-      (page) => page.windowId === activeWindow.windowId && page.isActive && page.url.startsWith(fixturePrefix),
+      (page) =>
+        page.windowId === activeWindow.windowId &&
+        page.isActive &&
+        isActivationBenchmarkFixtureUrl(page.url, fixtureOrigin),
     );
 
   let fixtureInfo = findActiveFixture();
@@ -341,72 +355,72 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
     }
 
     if (!before.statuses.length || before.statuses.some((status) => status !== 'STOPPED')) {
-      await internals.evaluateInPage(
-        (scope) => {
-          const observerKey = '__keybarActivationBenchmarkStopObserver';
-          window[observerKey]?.disconnect();
-          delete window[observerKey];
-          document.body.removeAttribute('data-keybar-benchmark-worker-stopped');
-          const read = () => {
+      try {
+        await internals.evaluateInPage(
+          (scope) => {
+            const observerKey = '__keybarActivationBenchmarkStopObserver';
+            window[observerKey]?.disconnect();
+            delete window[observerKey];
+            document.body.removeAttribute('data-keybar-benchmark-worker-stopped');
+            const read = () => {
+              const registration = [...document.querySelectorAll('.serviceworker-registration')].find(
+                (candidate) => candidate.querySelector('.serviceworker-scope .value')?.textContent?.trim() === scope,
+              );
+              if (!registration) {
+                return null;
+              }
+              return [...registration.querySelectorAll('.serviceworker-running-status .value')].map((node) =>
+                node.textContent?.trim(),
+              );
+            };
+            let stopRequested = false;
+            let observer;
+            const disconnectObserver = () => {
+              observer?.disconnect();
+              if (window[observerKey] === observer) {
+                delete window[observerKey];
+              }
+            };
+            const stopIfRunning = () => {
+              const statuses = read();
+              if (statuses?.length && statuses.every((status) => status === 'STOPPED')) {
+                document.body.setAttribute('data-keybar-benchmark-worker-stopped', 'true');
+                disconnectObserver();
+                return true;
+              }
+
+              if (statuses?.some((status) => status === 'STARTING' || status === 'STOPPING')) {
+                stopRequested = false;
+              }
+              if (statuses?.includes('RUNNING') && !stopRequested) {
+                const registration = [...document.querySelectorAll('.serviceworker-registration')].find(
+                  (candidate) => candidate.querySelector('.serviceworker-scope .value')?.textContent?.trim() === scope,
+                );
+                const buttons = [...(registration?.querySelectorAll('cr-button[data-command="stop"]') ?? [])];
+                if (buttons.length) {
+                  stopRequested = true;
+                  buttons.forEach((button) => button.click());
+                }
+              }
+              return false;
+            };
             const registration = [...document.querySelectorAll('.serviceworker-registration')].find(
               (candidate) => candidate.querySelector('.serviceworker-scope .value')?.textContent?.trim() === scope,
             );
             if (!registration) {
-              return null;
+              throw new Error(`Keybar worker scope was not found: ${scope}`);
             }
-            return [...registration.querySelectorAll('.serviceworker-running-status .value')].map((node) =>
-              node.textContent?.trim(),
-            );
-          };
-          let stopRequested = false;
-          let observer;
-          const disconnectObserver = () => {
-            observer?.disconnect();
-            if (window[observerKey] === observer) {
-              delete window[observerKey];
+            observer = new MutationObserver(stopIfRunning);
+            window[observerKey] = observer;
+            observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+            if (stopIfRunning()) {
+              return { stopped: true };
             }
-          };
-          const stopIfRunning = () => {
-            const statuses = read();
-            if (statuses?.length && statuses.every((status) => status === 'STOPPED')) {
-              document.body.setAttribute('data-keybar-benchmark-worker-stopped', 'true');
-              disconnectObserver();
-              return true;
-            }
-
-            if (statuses?.some((status) => status === 'STARTING' || status === 'STOPPING')) {
-              stopRequested = false;
-            }
-            if (statuses?.includes('RUNNING') && !stopRequested) {
-              const registration = [...document.querySelectorAll('.serviceworker-registration')].find(
-                (candidate) => candidate.querySelector('.serviceworker-scope .value')?.textContent?.trim() === scope,
-              );
-              const buttons = [...(registration?.querySelectorAll('cr-button[data-command="stop"]') ?? [])];
-              if (buttons.length) {
-                stopRequested = true;
-                buttons.forEach((button) => button.click());
-              }
-            }
-            return false;
-          };
-          observer = new MutationObserver(stopIfRunning);
-          window[observerKey] = observer;
-          observer.observe(document.body, { childList: true, characterData: true, subtree: true });
-          if (stopIfRunning()) {
-            return { stopped: true };
-          }
-          const registration = [...document.querySelectorAll('.serviceworker-registration')].find(
-            (candidate) => candidate.querySelector('.serviceworker-scope .value')?.textContent?.trim() === scope,
-          );
-          if (!registration) {
-            throw new Error(`Keybar worker scope was not found: ${scope}`);
-          }
-          return { stopped: false, statuses: read() };
-        },
-        workerScope,
-        { settle: true },
-      );
-      try {
+            return { stopped: false, statuses: read() };
+          },
+          workerScope,
+          { settle: true },
+        );
         const wait = await internals.waitForSelector('body[data-keybar-benchmark-worker-stopped="true"]', {
           timeout: workerStopTimeoutMs,
         });
@@ -415,12 +429,14 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
           throw new Error(`Keybar worker did not stop: ${JSON.stringify(current)}`);
         }
       } finally {
-        await internals.evaluateInPage(() => {
-          const observerKey = '__keybarActivationBenchmarkStopObserver';
-          window[observerKey]?.disconnect();
-          delete window[observerKey];
-          return true;
-        });
+        await internals
+          .evaluateInPage(() => {
+            const observerKey = '__keybarActivationBenchmarkStopObserver';
+            window[observerKey]?.disconnect();
+            delete window[observerKey];
+            return true;
+          })
+          .catch(() => undefined);
       }
     }
 
@@ -445,6 +461,9 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
 
   const samples = [];
   const originalFixtureUrl = fixtureInfo.url;
+  if (!isActivationBenchmarkFixtureUrl(originalFixtureUrl, fixtureOrigin)) {
+    throw new Error(`The active BrowserOS tab is not an exact Keybar fixture URL: ${originalFixtureUrl}`);
+  }
   const lockKey = 'keybar:activation-benchmark-lock';
   const lockTtlMs = 20 * 60 * 1000;
   const lockAcquisition = await fixture.evaluateInPage(
@@ -506,6 +525,28 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
       },
       { key: lockKey, token: lockToken },
     );
+  };
+  const renewOwnedLock = async () => {
+    const refreshed = await fixture.evaluateInPage(
+      ({ key, token, ttlMs }) => {
+        let current;
+        try {
+          current = JSON.parse(sessionStorage.getItem(key) || 'null');
+        } catch {
+          return false;
+        }
+        if (current?.token !== token) {
+          return false;
+        }
+        current.expiresAt = Date.now() + ttlMs;
+        sessionStorage.setItem(key, JSON.stringify(current));
+        return true;
+      },
+      { key: lockKey, token: lockToken, ttlMs: lockTtlMs },
+    );
+    if (!refreshed.value) {
+      throw new Error('Activation benchmark handle is stale; it no longer owns the fixture-tab lock');
+    }
   };
   for (let index = 0; index < count; index += 1) {
     try {
@@ -728,6 +769,7 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         fixture,
         restoreUrl: originalFixtureUrl,
         keepDocument,
+        beforeRestore: renewOwnedLock,
         releaseLock,
       });
       const failureMessage = error instanceof Error ? error.message : String(error);
@@ -762,6 +804,7 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
     fixture,
     restoreUrl: originalFixtureUrl,
     keepDocument,
+    beforeRestore: renewOwnedLock,
     releaseLock,
   });
   const cleanupErrors = [
@@ -839,6 +882,28 @@ const collectKeybarColdActivationMcp = async (
   }
 
   const fixture = browser.page(pageId);
+  const renewOwnedLock = async () => {
+    const refreshed = await fixture.evaluateInPage(
+      ({ key, token, ttlMs }) => {
+        let current;
+        try {
+          current = JSON.parse(sessionStorage.getItem(key) || 'null');
+        } catch {
+          return false;
+        }
+        if (current?.token !== token) {
+          return false;
+        }
+        current.expiresAt = Date.now() + ttlMs;
+        sessionStorage.setItem(key, JSON.stringify(current));
+        return true;
+      },
+      { key: 'keybar:activation-benchmark-lock', token: lockToken, ttlMs: 20 * 60 * 1000 },
+    );
+    if (!refreshed.value) {
+      throw new Error('Activation benchmark handle is stale; it no longer owns the fixture-tab lock');
+    }
+  };
   const collectSample = async () => {
     const collectionStartedAt = Date.now();
     const triggerComplete = await fixture.waitForSelector('html[data-keybar-benchmark-trigger-complete="true"]', {
@@ -956,6 +1021,7 @@ const collectKeybarColdActivationMcp = async (
   let result;
   let collectionFailure = null;
   try {
+    await renewOwnedLock();
     result = await collectSample();
     if (result?.ok === false) {
       collectionFailure = new Error(result.error ?? 'Benchmark sample collection failed.');
@@ -968,6 +1034,7 @@ const collectKeybarColdActivationMcp = async (
     fixture,
     restoreUrl,
     keepDocument,
+    beforeRestore: renewOwnedLock,
     releaseLock: () =>
       fixture.evaluateInPage(
         ({ key, token }) => {

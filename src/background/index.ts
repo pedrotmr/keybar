@@ -36,6 +36,7 @@ const TAB_PREVIEW_PREFIX = 'tabPreview:';
 const TAB_PREVIEW_IDS_KEY = 'tabPreviewIds';
 const OVERLAY_TAB_IDS_SESSION_KEY = 'keybarOverlayTabIds';
 const ACTIVATION_BENCHMARK_WINDOW_IDS_KEY = 'activationBenchmarkFixtureWindowIds';
+const ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY = 'activationBenchmarkFixturePlaceholderTabIds';
 
 const MAX_TAB_PREVIEWS = 5;
 const TAB_SWITCHER_OPENING_TIMEOUT_MS = 5000;
@@ -79,11 +80,20 @@ const isDisposableActivationBenchmarkPlaceholderTab = (tab: chrome.tabs.Tab): bo
 };
 
 const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Promise<number> => {
-  const storedWindowIds = await chrome.storage.session.get(ACTIVATION_BENCHMARK_WINDOW_IDS_KEY);
-  const ownedWindowIds = Array.isArray(storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY])
-    ? (storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY] as number[]).filter(Number.isInteger)
+  const stored = await chrome.storage.session.get([
+    ACTIVATION_BENCHMARK_WINDOW_IDS_KEY,
+    ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY,
+  ]);
+  const ownedWindowIds = Array.isArray(stored[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY])
+    ? (stored[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY] as number[]).filter(Number.isInteger)
     : [];
+  const placeholderIdsByWindow =
+    typeof stored[ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY] === 'object' &&
+    stored[ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY] !== null
+      ? (stored[ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY] as Record<string, number[]>)
+      : {};
   const remainingWindowIds: number[] = [];
+  const remainingPlaceholderIdsByWindow: Record<string, number[]> = {};
   let closedWindowCount = 0;
 
   for (const windowId of ownedWindowIds) {
@@ -94,10 +104,17 @@ const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Pro
     if (!window) {
       continue;
     }
-    const isPlaceholderTab = isDisposableActivationBenchmarkPlaceholderTab;
     const tabs = window.tabs ?? [];
-    if (tabs.some((tab) => !isPlaceholderTab(tab))) {
+    const ownedPlaceholderIds = new Set(
+      Array.isArray(placeholderIdsByWindow[String(windowId)])
+        ? placeholderIdsByWindow[String(windowId)].filter(Number.isInteger)
+        : [],
+    );
+    const isOwnedPlaceholder = (tab: chrome.tabs.Tab) =>
+      tab.id !== undefined && ownedPlaceholderIds.has(tab.id) && isDisposableActivationBenchmarkPlaceholderTab(tab);
+    if (tabs.some((tab) => !isOwnedPlaceholder(tab))) {
       remainingWindowIds.push(windowId);
+      remainingPlaceholderIdsByWindow[String(windowId)] = [...ownedPlaceholderIds];
       continue;
     }
 
@@ -107,11 +124,14 @@ const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Pro
         continue;
       }
       const currentTabs = currentWindow.tabs ?? [];
-      if (currentTabs.some((tab) => !isPlaceholderTab(tab))) {
+      if (currentTabs.some((tab) => !isOwnedPlaceholder(tab))) {
         remainingWindowIds.push(windowId);
+        remainingPlaceholderIdsByWindow[String(windowId)] = [...ownedPlaceholderIds];
         continue;
       }
-      const placeholderIds = currentTabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id]));
+      const placeholderIds = currentTabs.flatMap((tab) =>
+        isOwnedPlaceholder(tab) && tab.id !== undefined ? [tab.id] : [],
+      );
       if (placeholderIds.length) {
         await chrome.tabs.remove(placeholderIds);
       }
@@ -120,26 +140,43 @@ const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Pro
         closedWindowCount += 1;
       } else if ((postRemovalWindow.tabs ?? []).length) {
         remainingWindowIds.push(windowId);
+        remainingPlaceholderIdsByWindow[String(windowId)] = [...ownedPlaceholderIds];
       } else {
         await chrome.windows.remove(windowId);
         closedWindowCount += 1;
       }
     } catch {
       remainingWindowIds.push(windowId);
+      remainingPlaceholderIdsByWindow[String(windowId)] = [...ownedPlaceholderIds];
     }
   }
 
-  await chrome.storage.session.set({ [ACTIVATION_BENCHMARK_WINDOW_IDS_KEY]: remainingWindowIds });
+  await chrome.storage.session.set({
+    [ACTIVATION_BENCHMARK_WINDOW_IDS_KEY]: remainingWindowIds,
+    [ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY]: remainingPlaceholderIdsByWindow,
+  });
   return closedWindowCount;
 };
 
-const rememberActivationBenchmarkFixtureWindow = async (windowId: number): Promise<void> => {
-  const storedWindowIds = await chrome.storage.session.get(ACTIVATION_BENCHMARK_WINDOW_IDS_KEY);
-  const ownedWindowIds = Array.isArray(storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY])
-    ? (storedWindowIds[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY] as number[]).filter(Number.isInteger)
+const rememberActivationBenchmarkFixtureWindow = async (windowId: number, initialTabIds: number[]): Promise<void> => {
+  const stored = await chrome.storage.session.get([
+    ACTIVATION_BENCHMARK_WINDOW_IDS_KEY,
+    ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY,
+  ]);
+  const ownedWindowIds = Array.isArray(stored[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY])
+    ? (stored[ACTIVATION_BENCHMARK_WINDOW_IDS_KEY] as number[]).filter(Number.isInteger)
     : [];
+  const placeholderIdsByWindow =
+    typeof stored[ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY] === 'object' &&
+    stored[ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY] !== null
+      ? (stored[ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY] as Record<string, number[]>)
+      : {};
   await chrome.storage.session.set({
     [ACTIVATION_BENCHMARK_WINDOW_IDS_KEY]: [...new Set([...ownedWindowIds, windowId])],
+    [ACTIVATION_BENCHMARK_PLACEHOLDER_TAB_IDS_KEY]: {
+      ...placeholderIdsByWindow,
+      [String(windowId)]: [...new Set([...(placeholderIdsByWindow[String(windowId)] ?? []), ...initialTabIds])],
+    },
   });
 };
 
@@ -436,6 +473,7 @@ const openCommandCenter = async (
   fromShortcut = false,
   shortcutTab?: chrome.tabs.Tab,
   startedAtOverride?: number,
+  rejectQueuedTabSwitcherLaunch = false,
 ): Promise<boolean> => {
   const openedAt = Number.isFinite(startedAtOverride) ? Number(startedAtOverride) : Date.now();
   let openingWindowId: number | undefined;
@@ -480,6 +518,9 @@ const openCommandCenter = async (
       const opening = tabSwitcherOpeningWindows.get(windowId);
 
       if (opening && Date.now() - opening.startedAt < TAB_SWITCHER_OPENING_TIMEOUT_MS) {
+        if (rejectQueuedTabSwitcherLaunch) {
+          return false;
+        }
         opening.pendingCycles++;
         return true;
       }
@@ -982,14 +1023,22 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
       }
 
       const targets: number[] = [];
+      const initialTargetTabIds = new Set<number>();
       for (let index = 0; index < 3; index += 1) {
         const fixtureWindow = await chrome.windows.create({ focused: false });
         if (!fixtureWindow || fixtureWindow.id === undefined) {
           throw new Error('Chrome did not create a fixture window.');
         }
         targets.push(fixtureWindow.id);
+        const initialTabs = await chrome.tabs.query({ windowId: fixtureWindow.id });
+        const initialTabIds = initialTabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id]));
+        initialTabs.forEach((tab) => {
+          if (tab.id !== undefined) {
+            initialTargetTabIds.add(tab.id);
+          }
+        });
         try {
-          await rememberActivationBenchmarkFixtureWindow(fixtureWindow.id);
+          await rememberActivationBenchmarkFixtureWindow(fixtureWindow.id, initialTabIds);
         } catch (error) {
           await chrome.windows.remove(fixtureWindow.id).catch(() => undefined);
           throw error;
@@ -1009,9 +1058,9 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
       const postMoveTabs = await chrome.tabs.query({});
       const emptyNewTabs = postMoveTabs.flatMap((tab) =>
         tab.id !== undefined &&
+        initialTargetTabIds.has(tab.id) &&
         targets.includes(Number(tab.windowId)) &&
-        isActivationBenchmarkPlaceholderUrl(tab.url) &&
-        (tab.pendingUrl === undefined || isActivationBenchmarkPlaceholderUrl(tab.pendingUrl))
+        isDisposableActivationBenchmarkPlaceholderTab(tab)
           ? [tab.id]
           : [],
       );
@@ -1028,7 +1077,8 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
       }
       await closeActivationBenchmarkFixtureWindows(mainWindowId);
 
-      const arrangedFixtureTabs = (await chrome.tabs.query({})).filter((tab) => {
+      const finalTabs = await chrome.tabs.query({});
+      const arrangedFixtureTabs = finalTabs.filter((tab) => {
         try {
           const tabUrl = tab.url ? new URL(tab.url) : undefined;
           return tabUrl?.origin === activationBenchmarkOrigin && tabUrl.pathname === '/fixture';
@@ -1042,24 +1092,24 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
           tabsByWindow.set(tab.windowId, (tabsByWindow.get(tab.windowId) ?? 0) + 1);
         }
       });
+      const fixtureCountsByTarget = [mainWindowId, ...targets].map((windowId) => [
+        windowId,
+        arrangedFixtureTabs.filter((tab) => tab.windowId === windowId).length,
+      ]);
+      const totalCountsByTarget = targets.map((windowId) => [
+        windowId,
+        finalTabs.filter((tab) => tab.windowId === windowId).length,
+      ]);
       if (
         arrangedFixtureTabs.length !== 1000 ||
         tabsByWindow.size !== 4 ||
-        [...tabsByWindow.values()].some((count) => count !== 250)
+        [...tabsByWindow.values()].some((count) => count !== 250) ||
+        fixtureCountsByTarget.some(([, count]) => count !== 250) ||
+        totalCountsByTarget.some(([, count]) => count !== 250)
       ) {
         throw new Error(
-          `Expected four windows with 250 fixture tabs each; got ${JSON.stringify([...tabsByWindow.entries()])}.`,
+          `Expected four windows with 250 tabs and fixture tabs each; got ${JSON.stringify({ fixtureCounts: fixtureCountsByTarget, totalCounts: totalCountsByTarget })}.`,
         );
-      }
-      const unexpectedTargetTabs = await Promise.all(
-        targets.map(async (windowId) => {
-          const tabs = await chrome.tabs.query({ windowId });
-          return tabs.length === 250 ? null : { windowId, tabCount: tabs.length };
-        }),
-      );
-      const extraTabs = unexpectedTargetTabs.filter(Boolean);
-      if (extraTabs.length) {
-        throw new Error(`New fixture windows contain unexpected tabs: ${JSON.stringify(extraTabs)}`);
       }
 
       sendResponse({
@@ -1106,7 +1156,7 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
       }
 
       const activationStartedAt = Number.isFinite(startedAt) ? Number(startedAt) : Date.now();
-      const opened = await openCommandCenter(mode, tabId, true, targetTab, activationStartedAt);
+      const opened = await openCommandCenter(mode, tabId, true, targetTab, activationStartedAt, true);
       sendResponse(
         opened
           ? { success: true, activationId }
