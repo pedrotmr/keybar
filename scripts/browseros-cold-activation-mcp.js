@@ -27,6 +27,24 @@ const defaultBenchmarkOptions = {
   workerStopTimeoutMs: 25000,
 };
 
+const cleanupActivationBenchmark = async ({ fixture, restoreUrl, keepDocument, releaseLock }) => {
+  let restorationFailure = null;
+  let lockReleaseFailure = null;
+  if (!keepDocument) {
+    try {
+      await fixture.goto(restoreUrl);
+    } catch (error) {
+      restorationFailure = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  try {
+    await releaseLock();
+  } catch (error) {
+    lockReleaseFailure = error instanceof Error ? error : new Error(String(error));
+  }
+  return { restorationFailure, lockReleaseFailure };
+};
+
 const setKeybarFixtureLayoutMcp = async (
   browser,
   { layout, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin, resultTimeoutMs = 25000 },
@@ -706,18 +724,12 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         }
       }
     } catch (error) {
-      let restorationFailure = null;
-      let lockReleaseFailure = null;
-      try {
-        await fixture.goto(originalFixtureUrl);
-      } catch (cleanupError) {
-        restorationFailure = cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError));
-      }
-      try {
-        await releaseLock();
-      } catch (cleanupError) {
-        lockReleaseFailure = cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError));
-      }
+      const { restorationFailure, lockReleaseFailure } = await cleanupActivationBenchmark({
+        fixture,
+        restoreUrl: originalFixtureUrl,
+        keepDocument,
+        releaseLock,
+      });
       const failureMessage = error instanceof Error ? error.message : String(error);
       const cleanupErrors = [
         restorationFailure
@@ -746,20 +758,12 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         ((sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.ceil((sorted.length - 1) / 2)]) / 2).toFixed(1),
       )
     : null;
-  let restorationFailure = null;
-  if (!keepDocument) {
-    try {
-      await fixture.goto(originalFixtureUrl);
-    } catch (error) {
-      restorationFailure = error instanceof Error ? error : new Error(String(error));
-    }
-  }
-  let lockReleaseFailure = null;
-  try {
-    await releaseLock();
-  } catch (error) {
-    lockReleaseFailure = error instanceof Error ? error : new Error(String(error));
-  }
+  const { restorationFailure, lockReleaseFailure } = await cleanupActivationBenchmark({
+    fixture,
+    restoreUrl: originalFixtureUrl,
+    keepDocument,
+    releaseLock,
+  });
   const cleanupErrors = [
     restorationFailure ? `Could not restore the fixture to ${originalFixtureUrl}: ${restorationFailure.message}` : null,
     lockReleaseFailure ? `Could not release the fixture lock: ${lockReleaseFailure.message}` : null,
@@ -960,79 +964,49 @@ const collectKeybarColdActivationMcp = async (
     collectionFailure = error instanceof Error ? error : new Error(String(error));
   }
 
-  let restorationFailure = null;
-  let lockReleaseFailure = null;
-  if (!keepDocument) {
-    try {
-      await fixture.goto(restoreUrl);
-    } catch (error) {
-      restorationFailure = error instanceof Error ? error : new Error(String(error));
-    }
-  }
-  try {
-    await fixture.evaluateInPage(
-      ({ key, token }) => {
-        try {
-          const current = JSON.parse(sessionStorage.getItem(key) || 'null');
-          if (current?.token === token) {
+  const { restorationFailure, lockReleaseFailure } = await cleanupActivationBenchmark({
+    fixture,
+    restoreUrl,
+    keepDocument,
+    releaseLock: () =>
+      fixture.evaluateInPage(
+        ({ key, token }) => {
+          try {
+            const current = JSON.parse(sessionStorage.getItem(key) || 'null');
+            if (current?.token === token) {
+              sessionStorage.removeItem(key);
+            }
+          } catch {
             sessionStorage.removeItem(key);
           }
-        } catch {
-          sessionStorage.removeItem(key);
-        }
-        return true;
-      },
-      { key: 'keybar:activation-benchmark-lock', token: lockToken },
-    );
-  } catch (error) {
-    lockReleaseFailure = error instanceof Error ? error : new Error(String(error));
-  }
-
-  if (restorationFailure && !collectionFailure && result?.ok === true) {
-    result = {
-      ...result,
-      fixtureRestored: false,
-      restorationError: restorationFailure.message,
-    };
-  }
-  if (lockReleaseFailure && !collectionFailure && result?.ok === true) {
-    result = {
-      ...result,
-      lockReleased: false,
-      lockReleaseError: lockReleaseFailure.message,
-    };
-  }
-  if (!collectionFailure && result?.ok === true && (restorationFailure || lockReleaseFailure)) {
+          return true;
+        },
+        { key: 'keybar:activation-benchmark-lock', token: lockToken },
+      ),
+  });
+  if (collectionFailure || restorationFailure || lockReleaseFailure || result?.ok !== true) {
+    const error =
+      collectionFailure?.message ??
+      result?.error ??
+      (result?.ok === true
+        ? 'Benchmark sample collected, but cleanup failed.'
+        : 'Benchmark sample collection returned no result.');
     const cleanupErrors = [
       restorationFailure ? `Could not restore the fixture to ${restoreUrl}: ${restorationFailure.message}` : null,
       lockReleaseFailure ? `Could not release the fixture lock: ${lockReleaseFailure.message}` : null,
     ].filter(Boolean);
-    result = {
-      ...result,
+    return {
+      ...(result ?? {}),
       ok: false,
-      error: `Sample collected, but cleanup failed: ${cleanupErrors.join('; ')}`,
+      surface,
+      cell,
+      activationId,
+      failedIndex: index,
+      ...(collectionFailure ? { collectionError: collectionFailure.message } : {}),
+      ...(restorationFailure ? { fixtureRestored: false, restorationError: restorationFailure.message } : {}),
+      ...(lockReleaseFailure ? { lockReleased: false, lockReleaseError: lockReleaseFailure.message } : {}),
+      error: [error, ...cleanupErrors].join('; '),
     };
-    restorationFailure = null;
-    lockReleaseFailure = null;
-  }
-
-  const cleanupFailures = [collectionFailure, restorationFailure, lockReleaseFailure].filter(Boolean);
-  if (cleanupFailures.length > 1) {
-    throw new AggregateError(
-      cleanupFailures,
-      `Benchmark collection or cleanup failed: ${cleanupFailures.map((failure) => failure.message).join('; ')}`,
-    );
-  }
-  if (restorationFailure) {
-    throw new Error(`Could not restore the fixture to ${restoreUrl}: ${restorationFailure.message}`, {
-      cause: restorationFailure,
-    });
-  }
-  if (collectionFailure && result?.ok !== false) {
-    throw collectionFailure;
-  }
-  if (lockReleaseFailure) {
-    throw lockReleaseFailure;
   }
 
   return result;
