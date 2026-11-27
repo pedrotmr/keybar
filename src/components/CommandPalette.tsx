@@ -25,6 +25,8 @@ export function CommandPalette(props: CommandPaletteProps) {
       {model.mode === 'settings' ? (
         <SettingsView
           preferences={model.preferences}
+          searchProviders={model.searchProviders}
+          onSearchProvidersChange={model.handleSearchProvidersChange}
           onChange={model.handleThemeChange}
           onBack={() => model.changeMode('commands')}
           viewRef={(node) => {

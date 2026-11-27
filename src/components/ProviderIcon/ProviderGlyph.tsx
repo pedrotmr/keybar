@@ -22,10 +22,12 @@ const logos: Record<SearchProviderIconAsset, ProviderLogo> = {
   perplexity: perplexityLogo,
   x: { light: xLightLogo, dark: xDarkLogo },
   yahoo: null,
+  fallback: null,
 };
 
 interface ProviderGlyphProps {
   id: SearchProviderIconAsset;
+  label?: string;
 }
 
 function ProviderLogoImage({ src, className }: { src: string; className?: string }) {
@@ -34,7 +36,7 @@ function ProviderLogoImage({ src, className }: { src: string; className?: string
   return <img src={chrome.runtime.getURL(resourcePath)} className={className} alt="" draggable={false} />;
 }
 
-export function ProviderGlyph({ id }: ProviderGlyphProps) {
+export function ProviderGlyph({ id, label }: ProviderGlyphProps) {
   const logo = logos[id];
 
   if (typeof logo === 'string') {
@@ -62,7 +64,7 @@ export function ProviderGlyph({ id }: ProviderGlyphProps) {
         textAnchor="middle"
         letterSpacing="-1"
       >
-        Y!
+        {id === 'yahoo' ? 'Y!' : (label?.trim().slice(0, 2) || '?').toUpperCase()}
       </text>
     </svg>
   );

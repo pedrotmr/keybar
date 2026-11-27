@@ -26,6 +26,8 @@ const {
   findSearchProvider,
   findSearchProviders,
   getSearchProviderSuggestions,
+  normalizeSearchProviderSettings,
+  detectProviderPrefixConflicts,
   parseProviderQuery,
   searchProviders,
 } = await server.ssrLoadModule('/src/utils/searchProviders.ts');
@@ -790,21 +792,29 @@ test('search ranking and navigation behavior', async () => {
       ['google'],
       'an exact alias keeps the existing Google choice ahead of Maps name prefixes',
     );
-    assert.deepEqual(
-      findSearchProviders('g').map((provider) => provider.id),
-      ['google', 'google-maps', 'chatgpt'],
-      'progressive prefix collisions remain visible to callers',
+    const googlePrefixCandidates = findSearchProviders('g').map((provider) => provider.id);
+    assert.ok(
+      ['google', 'google-maps', 'chatgpt'].every((id) => googlePrefixCandidates.includes(id)),
+      'the existing progressive prefix candidates remain visible alongside the larger catalog',
     );
     assert.equal(findSearchProvider('g')?.id, 'google', 'an exact canonical prefix wins over an alias collision');
     assert.equal(parseProviderQuery('g weather')?.provider.id, 'google', 'canonical triggers resolve query collisions');
     for (const alias of ['yt', 'yo', 'you', 'yout', 'youtu', 'youtub', 'youtube']) {
       assert.equal(findSearchProvider(alias)?.id, 'youtube', `YouTube trigger prefix ${alias} is recognized`);
     }
-    for (const alias of ['ya', 'yah', 'yaho', 'yahoo']) {
+    assert.equal(findSearchProvider('ya'), null, 'the shared Yahoo and Yandex prefix remains ambiguous until selected');
+    assert.ok(
+      ['yahoo', 'yandex'].every((id) => findSearchProviders('ya').some((provider) => provider.id === id)),
+      'the shared Yahoo and Yandex candidates are both shown',
+    );
+    for (const alias of ['yah', 'yaho', 'yahoo']) {
       assert.equal(findSearchProvider(alias)?.id, 'yahoo', `Yahoo trigger prefix ${alias} is recognized`);
     }
     for (const alias of ['ch', 'cha', 'chat', 'gp', 'gpt', 'chatgpt']) {
-      assert.equal(findSearchProvider(alias)?.id, 'chatgpt', `ChatGPT trigger prefix ${alias} is recognized`);
+      assert.ok(
+        findSearchProviders(alias).some((provider) => provider.id === 'chatgpt'),
+        `ChatGPT trigger prefix ${alias} is recognized`,
+      );
     }
     for (const provider of searchProviders) {
       const aliases = [provider.prefix, ...provider.aliases, provider.name, ...provider.name.split(/\s+/)];
@@ -845,12 +855,16 @@ test('search ranking and navigation behavior', async () => {
     };
     const compoundMapsRegistry = [...searchProviders, googleMapsGo];
     for (const alias of ['gm', 'ma', 'map', 'maps', 'google maps']) {
-      assert.equal(
-        findSearchProvider(alias, mapsRegistry)?.id,
-        'google-maps',
+      assert.ok(
+        findSearchProviders(alias, mapsRegistry).some((provider) => provider.id === 'google-maps'),
         `Google Maps trigger ${alias} is recognized when registered`,
       );
     }
+    assert.equal(
+      findSearchProvider('gm', mapsRegistry)?.id,
+      'google-maps',
+      'the dedicated Maps shortcut remains unambiguous',
+    );
     assert.equal(
       findProviderQueryMatch('Google Maps', mapsRegistry),
       null,
@@ -984,10 +998,10 @@ test('search ranking and navigation behavior', async () => {
       'https://www.google.com/search?q=youtube%20music',
       'ordinary YouTube phrases keep their complete query until explicit selection',
     );
-    assert.deepEqual(
-      findSearchProviders('ma', ambiguousMapsRegistry).map((provider) => provider.id),
-      ['google-maps', 'apple-maps'],
-      'an ambiguous map prefix exposes each registered candidate in registry order',
+    const mapPrefixCandidates = findSearchProviders('ma', ambiguousMapsRegistry).map((provider) => provider.id);
+    assert.ok(
+      ['google-maps', 'apple-maps'].every((id) => mapPrefixCandidates.includes(id)),
+      'an ambiguous map prefix exposes registered Maps candidates alongside catalog matches',
     );
     assert.equal(findProviderQueryMatch('ma lunch', mapsRegistry)?.query, 'lunch');
     assert.equal(
@@ -1058,20 +1072,19 @@ test('search ranking and navigation behavior', async () => {
       null,
       'a one-letter fragment of a longer alias does not commit a provider handoff',
     );
-    assert.deepEqual(
-      findProviderQueryMatch('t weather')?.providers.map((provider) => provider.id),
-      ['x'],
-      'a one-letter fragment can remain a provider suggestion',
+    assert.ok(
+      findProviderQueryMatch('t weather')?.providers.some((provider) => provider.id === 'x'),
+      'a one-letter fragment can remain among the provider suggestions',
     );
     assert.equal(
       searchItems([], 't weather')[0].url,
       'https://www.google.com/search?q=t%20weather',
       'an uncommitted alias fragment keeps the full-query web fallback',
     );
-    assert.deepEqual(
-      findProviderQueryMatch('c programming')?.providers.map((provider) => provider.id),
-      ['chatgpt', 'claude'],
-      'ambiguous partial triggers expose all matching providers',
+    const cPrefixCandidates = findProviderQueryMatch('c programming')?.providers.map((provider) => provider.id) ?? [];
+    assert.ok(
+      ['chatgpt', 'claude'].every((id) => cPrefixCandidates.includes(id)),
+      'ambiguous partial triggers expose the existing providers alongside the larger catalog',
     );
     assert.equal(
       searchItems([], 'c programming')[0].id,
@@ -1248,6 +1261,91 @@ test('search ranking and navigation behavior', async () => {
       'tab mode never replaces no matches with an external search',
     );
   }
+});
+
+test('configurable search-provider catalog behavior', async () => {
+  assert.equal(searchProviders.length, 107, 'the complete researched catalog is loaded, including existing providers');
+  assert.equal(
+    searchProviders.find((provider) => provider.id === 'google-maps')?.urlTemplate,
+    'https://www.google.com/maps/search/?api=1&query=%s',
+    'the production Maps route stays registered',
+  );
+
+  const google = searchProviders.find((provider) => provider.id === 'google');
+  assert.ok(google, 'the existing production Google provider remains in the catalog');
+  const configured = normalizeSearchProviderSettings({
+    providers: [
+      { ...google, enabled: false },
+      {
+        id: 'custom-example-search',
+        name: 'Example Search',
+        urlTemplate: 'https://example.com/search?q=%s',
+        prefixes: ['ex', 'example'],
+        enabled: true,
+      },
+    ],
+  });
+  assert.equal(
+    configured.find((provider) => provider.id === 'google')?.enabled,
+    false,
+    'built-in providers can be disabled without being removed',
+  );
+  assert.ok(
+    configured.some((provider) => provider.id === 'google'),
+    'disabled built-ins remain in settings',
+  );
+  const enabledProviders = configured.filter((provider) => provider.enabled);
+  assert.ok(
+    getSearchProviderSuggestions('g', enabledProviders).every((provider) => provider.id !== 'google'),
+    'disabled providers do not appear in Command Bar suggestions',
+  );
+  assert.equal(
+    searchItems([], 'g cats', false, true, enabledProviders).some((item) => item.type === 'search'),
+    false,
+    'disabling the Google fallback removes unmatched-query handoffs',
+  );
+  const custom = configured.find((provider) => provider.id === 'custom-example-search');
+  assert.equal(custom?.builtIn, false, 'custom providers are restored from settings');
+  assert.equal(
+    parseProviderQuery(
+      'ex cats',
+      configured.filter((provider) => provider.enabled),
+    )?.provider.id,
+    custom?.id,
+    'custom prefixes can route queries',
+  );
+  assert.equal(
+    parseProviderQuery(
+      'g cats',
+      configured.filter((provider) => provider.enabled),
+    ),
+    null,
+    'disabled providers cannot receive a query handoff',
+  );
+
+  const editedGoogle = { ...google, prefixes: ['web'], prefix: 'web', aliases: ['web'] };
+  assert.equal(
+    parseProviderQuery('web cats', [editedGoogle])?.provider.id,
+    google.id,
+    'prefix edits apply to the progressive trigger matcher',
+  );
+  const conflicts = detectProviderPrefixConflicts([
+    editedGoogle,
+    { ...custom, prefixes: ['website'], prefix: 'website', aliases: ['website'] },
+  ]);
+  assert.ok(
+    conflicts.some((conflict) => conflict.trigger === 'we'),
+    'conflicts include generated progressive-prefix overlaps',
+  );
+  assert.ok(
+    conflicts.some((conflict) => conflict.trigger === 'web'),
+    'conflicts include exact prefix overlaps',
+  );
+  assert.equal(
+    createProviderSearchItem(custom, 'a & b').url,
+    'https://example.com/search?q=a%20%26%20b',
+    'provider query URLs encode user input safely',
+  );
 });
 
 test('command availability and split-view behavior', async () => {
