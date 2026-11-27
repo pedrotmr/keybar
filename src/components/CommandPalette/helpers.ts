@@ -103,16 +103,17 @@ export const findPaletteResults = (
   mode: CommandPaletteMode,
   items: PaletteItem[],
   allowFallback: boolean,
+  providers?: SearchProviderDefinition[],
 ): PaletteItem[] => {
   if (!activeProvider) {
-    return searchItems(items, query, false, allowFallback);
+    return searchItems(items, query, false, allowFallback, providers);
   }
 
   if (!query.trim() || mode !== 'commands') {
     return [];
   }
 
-  return searchProviderItems(items, query, activeProvider, allowFallback);
+  return searchProviderItems(items, query, activeProvider, allowFallback, providers);
 };
 
 export const getConfirmCloseTitle = (action: BulkCloseAction, count: number): string => {

@@ -234,6 +234,7 @@ export const searchItems = (
   query: string,
   tabsOnly = false,
   allowFallback = true,
+  providers: SearchProviderDefinition[] = searchProviders,
 ): PaletteItem[] => {
   const normalized = query.trim();
 
@@ -241,7 +242,8 @@ export const searchItems = (
     return rankItems(items, '', 40);
   }
 
-  const providerQuery = tabsOnly ? null : parseProviderQuery(normalized);
+  const enabledProviders = providers.filter((provider) => provider.enabled);
+  const providerQuery = tabsOnly ? null : parseProviderQuery(normalized, enabledProviders);
 
   if (!tabsOnly) {
     const isChromePage = normalized.toLowerCase().startsWith('chrome://');
@@ -278,15 +280,18 @@ export const searchItems = (
     return rankItems(filteredItems, localQuery, 100);
   }
 
-  const fallbackProvider = searchProviders[0];
+  const fallbackProvider = enabledProviders.find((provider) => provider.id === 'google');
+  if (!fallbackProvider) return rankItems(filteredItems, localQuery, 100);
   const searchItem: PaletteItem = {
-    id: 'search-google',
-    title: `Search Google for “${normalized}”`,
+    id: `search-${fallbackProvider.id}`,
+    title: `Search ${fallbackProvider.name} for “${normalized}”`,
     subtitle: fallbackProvider.hint,
     icon: '↗',
     type: 'search',
-    keywords: ['Google', normalized],
-    url: fallbackProvider.urlTemplate.replace('%s', encodeURIComponent(normalized)),
+    keywords: [fallbackProvider.name, normalized],
+    url: fallbackProvider.urlTemplate.includes('%s')
+      ? fallbackProvider.urlTemplate.replace(/%s/g, encodeURIComponent(normalized))
+      : fallbackProvider.urlTemplate,
   };
 
   // Rank non-history first so a history flood cannot consume the cap and hide
@@ -309,6 +314,7 @@ export const searchProviderItems = (
   query: string,
   provider: SearchProviderDefinition,
   allowFallback = true,
+  providers: SearchProviderDefinition[] = searchProviders,
 ): PaletteItem[] => {
   const normalized = query.trim();
 
@@ -323,7 +329,7 @@ export const searchProviderItems = (
     return [providerItem];
   }
 
-  const results = searchItems(items, normalized, false, allowFallback);
+  const results = searchItems(items, normalized, false, allowFallback, providers);
   const navigationIndex = results.findIndex((item) => item.type === 'url' && item.url === navigationUrl);
 
   if (navigationIndex < 0) {

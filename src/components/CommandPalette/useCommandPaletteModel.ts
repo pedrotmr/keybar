@@ -16,7 +16,13 @@ import { getCommands } from '@/utils/commands';
 import { bulkCloseTabIds, isBulkCloseAction } from '@/utils/bulkClose';
 import { normalizeNavigationUrl, sendBackground } from '@/utils/chromeHelpers';
 import { writeClipboardText } from '@/utils/clipboard';
-import { findProviderQueryMatch, getSearchProviderSuggestions, parseProviderQuery } from '@/utils/searchProviders';
+import {
+  findProviderQueryMatch,
+  getSearchProviderSuggestions,
+  normalizeSearchProviderSettings,
+  parseProviderQuery,
+  SEARCH_PROVIDER_SETTINGS_KEY,
+} from '@/utils/searchProviders';
 import type { SearchProviderDefinition } from '@/utils/searchProviders';
 import { isTabInSplitView } from '@/utils/splitViews';
 import { TAB_GROUP_ID_NONE } from '@/utils/chromeApiConstants';
@@ -52,6 +58,7 @@ export const useCommandPaletteModel = ({
   const [mode, setMode] = useState<CommandPaletteMode>(initialMode);
   const [query, setQuery] = useState('');
   const [activeProvider, setActiveProvider] = useState<SearchProviderDefinition | null>(null);
+  const [searchProviders, setSearchProviders] = useState<SearchProviderDefinition[]>([]);
   const [scopeAnnouncement, setScopeAnnouncement] = useState('');
   const providerOriginQuery = useRef('');
 
@@ -74,6 +81,26 @@ export const useCommandPaletteModel = ({
     themeRoot,
     cacheInLocalStorage: cacheThemeInLocalStorage,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    const storage = globalThis.chrome?.storage?.local;
+    if (!storage) {
+      setSearchProviders(normalizeSearchProviderSettings(undefined));
+      return;
+    }
+    void storage
+      .get(SEARCH_PROVIDER_SETTINGS_KEY)
+      .then((stored) => {
+        if (!cancelled) setSearchProviders(normalizeSearchProviderSettings(stored[SEARCH_PROVIDER_SETTINGS_KEY]));
+      })
+      .catch(() => {
+        if (!cancelled) setSearchProviders(normalizeSearchProviderSettings(undefined));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [dialogError, setDialogError] = useState('');
@@ -301,8 +328,11 @@ export const useCommandPaletteModel = ({
       return null;
     }
 
-    return findProviderQueryMatch(query);
-  }, [mode, query, activeProvider]);
+    return findProviderQueryMatch(
+      query,
+      searchProviders.filter((provider) => provider.enabled),
+    );
+  }, [mode, query, activeProvider, searchProviders]);
 
   const providerCandidates = useMemo(() => {
     if (mode !== 'commands' || activeProvider) {
@@ -313,8 +343,11 @@ export const useCommandPaletteModel = ({
       return providerQueryMatch.provider ? [] : providerQueryMatch.providers;
     }
 
-    return getSearchProviderSuggestions(query);
-  }, [mode, query, activeProvider, providerQueryMatch]);
+    return getSearchProviderSuggestions(
+      query,
+      searchProviders.filter((provider) => provider.enabled),
+    );
+  }, [mode, query, activeProvider, providerQueryMatch, searchProviders]);
 
   const providerCandidate = providerCandidates.length === 1 ? providerCandidates[0] : null;
   const isStandaloneCanonicalProviderShortcut = Boolean(
@@ -342,14 +375,17 @@ export const useCommandPaletteModel = ({
     const start = performance.now();
     const allowFallback = !localDataLoading && !isStandaloneCanonicalProviderShortcut;
     const searchableItems = !query.trim() && mode === 'commands' ? initialItems : sourceItems;
-    const found = findPaletteResults(activeProvider, query, mode, searchableItems, allowFallback);
+    const found = findPaletteResults(activeProvider, query, mode, searchableItems, allowFallback, searchProviders);
 
     if (
       savedSearchPrompt &&
       !activeProvider &&
       (!isStandaloneCanonicalProviderShortcut ||
         Boolean(providerQueryMatch?.query || providerQueryMatch?.preserveFullQueryFallback)) &&
-      !parseProviderQuery(query) &&
+      !parseProviderQuery(
+        query,
+        searchProviders.filter((provider) => provider.enabled),
+      ) &&
       !normalizeNavigationUrl(query)
     ) {
       // Permission discovery must not take over the selected result or Enter action.
@@ -366,6 +402,7 @@ export const useCommandPaletteModel = ({
     return visibleResults;
   }, [
     sourceItems,
+    searchProviders,
     initialItems,
     query,
     mode,
@@ -1331,6 +1368,13 @@ export const useCommandPaletteModel = ({
     });
   };
 
+  const handleSearchProvidersChange = (providers: SearchProviderDefinition[]): void => {
+    setSearchProviders(providers);
+    void globalThis.chrome?.storage?.local?.set({ [SEARCH_PROVIDER_SETTINGS_KEY]: { providers } }).catch(() => {
+      notify('Could not save search provider settings.');
+    });
+  };
+
   const emptyState = getEmptyState(providerCandidate, activeProvider, query);
 
   const resultCountText = `${results.length} ${results.length === 1 ? 'result' : 'results'}`;
@@ -1429,6 +1473,8 @@ export const useCommandPaletteModel = ({
     mode,
     surface,
     preferences,
+    searchProviders,
+    handleSearchProvidersChange,
     query,
     highlightQuery,
     activeProvider,

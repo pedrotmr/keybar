@@ -5,6 +5,8 @@ import { FontFamilySection } from './SettingsView/FontFamilySection/FontFamilySe
 import { PaletteSection } from './SettingsView/PaletteSection/PaletteSection';
 import { ShortcutSettingsRow } from './SettingsView/ShortcutSettingsRow/ShortcutSettingsRow';
 import { WindowModeSection } from './SettingsView/WindowModeSection/WindowModeSection';
+import { SearchProviderSection } from './SettingsView/SearchProviderSection';
+import type { SearchProviderDefinition } from '@/utils/searchProviders';
 
 interface SettingsViewProps {
   preferences: ThemePreferences;
@@ -12,9 +14,19 @@ interface SettingsViewProps {
   onManageShortcuts: () => void;
   onBack: () => void;
   viewRef: (node: HTMLElement | null) => void;
+  searchProviders: SearchProviderDefinition[];
+  onSearchProvidersChange: (providers: SearchProviderDefinition[]) => void;
 }
 
-export function SettingsView({ preferences, onChange, onManageShortcuts, onBack, viewRef }: SettingsViewProps) {
+export function SettingsView({
+  preferences,
+  onChange,
+  onManageShortcuts,
+  onBack,
+  viewRef,
+  searchProviders,
+  onSearchProvidersChange,
+}: SettingsViewProps) {
   return (
     <section ref={viewRef} className="settings-view" aria-labelledby="settings-title" tabIndex={-1}>
       <button
@@ -37,11 +49,12 @@ export function SettingsView({ preferences, onChange, onManageShortcuts, onBack,
         </svg>
       </button>
       <div className="settings-heading">
-        <h2 id="settings-title">Appearance</h2>
-        <p>Choose how the Command Bar and Tab Switcher look.</p>
+        <h2 id="settings-title">Settings</h2>
+        <p>Adjust the Command Bar appearance and search provider catalog.</p>
       </div>
 
       <ShortcutSettingsRow onManageShortcuts={onManageShortcuts} />
+      <SearchProviderSection providers={searchProviders} onChange={onSearchProvidersChange} />
       <AppearanceSection preferences={preferences} onChange={onChange} />
       <PaletteSection preferences={preferences} onChange={onChange} />
       <FontFamilySection preferences={preferences} onChange={onChange} />

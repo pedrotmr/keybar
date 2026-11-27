@@ -2,7 +2,7 @@
 
 - **Date:** 6 November 2026 (research snapshot); 23 November 2026 (decision)
 - **Issue:** [#29](https://github.com/pedrotmr/keybar/issues/29); implementation issue [#57](https://github.com/pedrotmr/keybar/issues/57), opened 23 November 2026.
-- **Status:** decidido — the outcome was “issue a abrir” for a large configurable provider catalog with URL templates, prefixes, conflict detection, and enable/disable controls; implementation is now tracked in #57.
+- **Status:** implementation in #57 — the full 107-destination table supplies the built-in Command Bar catalog; provider names, URL templates, prefixes, enabled state, and custom providers are configurable in Settings.
 
 **Research snapshot:** 6 November 2026 · **Status:** decision support; no product integrations are proposed by this document.
 
@@ -11,6 +11,8 @@
 This is a broad catalog of public web destinations that a keyboard command bar could hand a query to. It covers global and regional web search, AI answer/chat, video, social and communities, shopping, maps/local search, developer/reference search, knowledge/media, and the **Chrome Web Store itself**. It is intentionally not an inventory of every niche, self-hosted, short-lived, adult, or country-specific site. Search-provider markets and web routes change; verify a candidate's URL and availability again when Pedro chooses it.
 
 **URL notation:** `%s` is a single URL-encoded query. In the tables, `Current` or an unqualified `Candidate` means **Yes**: the row has a public query URL pattern that can be opened directly. `Candidate · limited` means the site may require sign-in, a region, an instance, or client-side state, or a durable query route/prefill could not be confirmed. A row that says there is no stable query URL is **No** for query handoff (though a site-open shortcut may still be possible). “Observed URL” is evidence of a handoff, not a promise by the provider to preserve that route forever. A query handoff opens the provider's site; it is not a private API or in-extension results.
+
+The product uses each row's query route when `%s` is documented and the linked homepage when no stable query route is listed. Trigger suggestions expand progressively from configured prefixes and provider names. Settings reports any shared generated trigger so users can disable a provider or change its prefixes before selecting a handoff.
 
 **Decision update (18 November 2026):** Pedro approved Google Maps for issue #30 despite the original provider-addition scope note. `gm` commits directly; `ma` and `maps` remain selectable suggestions, so ambiguous text is not handed off without user choice. The implementation is in PR #49. The local icon is a generic folded map tinted with the Maps blue accent. SVGL lists an [official Google Maps SVG](https://github.com/pheralb/svgl/blob/main/static/library/googleMaps.svg), but its [site requires permission before logo use](https://svgl.app/) and Google's [brand terms](https://about.google/intl/en/brand-resource-center/brand-terms/) require approved use; Keybar does not bundle that artwork.
 

@@ -24,7 +24,7 @@ export function ProviderIcon({ providerId, className = '' }: ProviderIconProps) 
 
   return (
     <span className={`provider-mark ${className}`.trim()} style={providerAccentStyle(provider)} aria-hidden="true">
-      <ProviderGlyph id={provider.iconAsset} />
+      <ProviderGlyph id={provider.iconAsset} label={provider.name} />
     </span>
   );
 }
