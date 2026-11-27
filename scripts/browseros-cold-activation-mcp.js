@@ -384,11 +384,6 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         await internals.evaluateInPage(
           ({ scope, token }) => {
             const observerKey = `__keybarActivationBenchmarkStopObserver_${token}`;
-            const existing = window[observerKey];
-            if (existing?.token === token) {
-              existing.observer?.disconnect();
-              delete window[observerKey];
-            }
             document.body.removeAttribute('data-keybar-benchmark-worker-stopped');
             const read = () => {
               const registration = [...document.querySelectorAll('.serviceworker-registration')].find(
