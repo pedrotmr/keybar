@@ -379,12 +379,16 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
     }
 
     if (!before.statuses.length || before.statuses.some((status) => status !== 'STOPPED')) {
+      const observerToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       try {
         await internals.evaluateInPage(
-          (scope) => {
-            const observerKey = '__keybarActivationBenchmarkStopObserver';
-            window[observerKey]?.disconnect();
-            delete window[observerKey];
+          ({ scope, token }) => {
+            const observerKey = `__keybarActivationBenchmarkStopObserver_${token}`;
+            const existing = window[observerKey];
+            if (existing?.token === token) {
+              existing.observer?.disconnect();
+              delete window[observerKey];
+            }
             document.body.removeAttribute('data-keybar-benchmark-worker-stopped');
             const read = () => {
               const registration = [...document.querySelectorAll('.serviceworker-registration')].find(
@@ -401,7 +405,8 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
             let observer;
             const disconnectObserver = () => {
               observer?.disconnect();
-              if (window[observerKey] === observer) {
+              const current = window[observerKey];
+              if (current?.token === token && current.observer === observer) {
                 delete window[observerKey];
               }
             };
@@ -435,14 +440,14 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
               throw new Error(`Keybar worker scope was not found: ${scope}`);
             }
             observer = new MutationObserver(stopIfRunning);
-            window[observerKey] = observer;
+            window[observerKey] = { token, observer };
             observer.observe(document.body, { childList: true, characterData: true, subtree: true });
             if (stopIfRunning()) {
               return { stopped: true };
             }
             return { stopped: false, statuses: read() };
           },
-          workerScope,
+          { scope: workerScope, token: observerToken },
           { settle: true },
         );
         const wait = await internals.waitForSelector('body[data-keybar-benchmark-worker-stopped="true"]', {
@@ -454,12 +459,15 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         }
       } finally {
         await internals
-          .evaluateInPage(() => {
-            const observerKey = '__keybarActivationBenchmarkStopObserver';
-            window[observerKey]?.disconnect();
-            delete window[observerKey];
+          .evaluateInPage((token) => {
+            const observerKey = `__keybarActivationBenchmarkStopObserver_${token}`;
+            const current = window[observerKey];
+            if (current?.token === token) {
+              current.observer?.disconnect();
+              delete window[observerKey];
+            }
             return true;
-          })
+          }, observerToken)
           .catch(() => undefined);
       }
     }

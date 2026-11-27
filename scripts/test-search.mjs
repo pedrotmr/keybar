@@ -2091,6 +2091,22 @@ test('background message and command contracts', async () => {
     const runtimeMessages = makeEvent();
     const installedEvents = { onInstalled: makeEvent(), onStartup: makeEvent() };
     const actionCalls = [];
+    const waitForFallbackPopupRoute = async (tabId, popup) => {
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        const fallbackIndex = actionCalls.findIndex((call) => call.type === 'createWindow');
+        if (
+          fallbackIndex >= 0 &&
+          actionCalls
+            .slice(fallbackIndex + 1)
+            .some((call) => call.type === 'setPopup' && call.tabId === tabId && call.popup === popup)
+        ) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      assert.fail(`Toolbar popup route ${JSON.stringify(popup)} was not restored after fallback window creation`);
+    };
     let activeTabQuery;
     const privilegedMutations = [];
     let permissionWindowOptions;
@@ -2250,7 +2266,7 @@ test('background message and command contracts', async () => {
     failPopupOpen = true;
     actionCalls.length = 0;
     globalThis.chrome.action.onClicked.listeners[0](activeBackgroundTab);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForFallbackPopupRoute(activeBackgroundTab.id, '');
     assert.ok(actionCalls.some((call) => call.type === 'openPopup'));
     assert.ok(actionCalls.some((call) => call.type === 'createWindow'));
     assert.equal(

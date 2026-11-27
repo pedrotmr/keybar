@@ -57,13 +57,14 @@ const pendingActivation = ({
   };
 };
 
-const makeBrowser = (pending, onWait, pageClockMs = 96) => {
+const makeBrowser = (pending, onWait, pageClockMs = 96, { onClock } = {}) => {
   const fixture = {
     evaluateInPage: async (script) => {
       if (typeof script === 'string' && script.includes('__keybarColdActivationProbe')) {
-        return { value: pending.fixtureProbe };
+        return { value: structuredClone(pending.fixtureProbe) };
       }
       if (script === 'return performance.now()') {
+        onClock?.();
         return { value: pageClockMs };
       }
       return { value: true };
@@ -73,6 +74,64 @@ const makeBrowser = (pending, onWait, pageClockMs = 96) => {
   };
   return { page: () => fixture };
 };
+
+test('split collection accepts a result recorded after the first probe read but before the deadline check', async () => {
+  const pending = pendingActivation({ completedPerfMs: 94 });
+  const browser = makeBrowser(
+    pending,
+    async () => {
+      throw new Error('The result was recorded by the deadline, so no selector wait should start');
+    },
+    101,
+    {
+      onClock: () => {
+        pending.fixtureProbe.bridgeState.resultAfterPaintOpportunityAt = '99';
+        pending.fixtureProbe.events.push({
+          activationId: pending.activationId,
+          name: 'firstResultAfterPaintOpportunity',
+          activation: 1,
+          surface: 'command-bar',
+          perfMs: 99,
+        });
+      },
+    },
+  );
+
+  const result = await benchmark.collect(browser, pending);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sample.latencyMs.firstResultAfterPaintOpportunity, 9);
+});
+
+test('split collection accepts a trigger response recorded after the first probe read but before the deadline check', async () => {
+  const pending = pendingActivation({ triggerComplete: false });
+  const browser = makeBrowser(
+    pending,
+    async () => {
+      throw new Error('The response was recorded by the deadline, so no selector wait should start');
+    },
+    101,
+    {
+      onClock: () => {
+        pending.fixtureProbe.triggerResponse.completedPerfMs = 99;
+        pending.fixtureProbe.bridgeState.triggerComplete = true;
+        pending.fixtureProbe.bridgeState.resultAfterPaintOpportunityAt = '99';
+        pending.fixtureProbe.events.push({
+          activationId: pending.activationId,
+          name: 'firstResultAfterPaintOpportunity',
+          activation: 1,
+          surface: 'command-bar',
+          perfMs: 99,
+        });
+      },
+    },
+  );
+
+  const result = await benchmark.collect(browser, pending);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sample.latencyMs.firstResultAfterPaintOpportunity, 9);
+});
 
 test('split collection accepts an on-time result recorded as the selector wait times out', async () => {
   const pending = pendingActivation({ completedPerfMs: 94 });

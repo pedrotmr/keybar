@@ -70,6 +70,9 @@ const isActivationBenchmarkPlaceholderUrl = (url?: string): boolean =>
 const isKnownActivationBenchmarkPlaceholderUrl = (url?: string): boolean =>
   url === 'about:blank' || url === 'chrome://newtab/';
 
+const isActivationBenchmarkDiagnosticsTab = (tab: chrome.tabs.Tab): boolean =>
+  [tab.url, tab.pendingUrl].some((url) => url?.startsWith('chrome://serviceworker-internals'));
+
 const isDisposableActivationBenchmarkPlaceholderTab = (tab: chrome.tabs.Tab): boolean => {
   const urlsArePlaceholders =
     isActivationBenchmarkPlaceholderUrl(tab.url) &&
@@ -97,7 +100,14 @@ const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Pro
   let closedWindowCount = 0;
 
   for (const windowId of ownedWindowIds) {
+    const ownedPlaceholderIds = new Set(
+      Array.isArray(placeholderIdsByWindow[String(windowId)])
+        ? placeholderIdsByWindow[String(windowId)].filter(Number.isInteger)
+        : [],
+    );
     if (windowId === mainWindowId) {
+      remainingWindowIds.push(windowId);
+      remainingPlaceholderIdsByWindow[String(windowId)] = [...ownedPlaceholderIds];
       continue;
     }
     const window = await chrome.windows.get(windowId, { populate: true }).catch(() => undefined);
@@ -105,11 +115,6 @@ const closeActivationBenchmarkFixtureWindows = async (mainWindowId: number): Pro
       continue;
     }
     const tabs = window.tabs ?? [];
-    const ownedPlaceholderIds = new Set(
-      Array.isArray(placeholderIdsByWindow[String(windowId)])
-        ? placeholderIdsByWindow[String(windowId)].filter(Number.isInteger)
-        : [],
-    );
     const isOwnedPlaceholder = (tab: chrome.tabs.Tab) =>
       tab.id !== undefined && ownedPlaceholderIds.has(tab.id) && isDisposableActivationBenchmarkPlaceholderTab(tab);
     if (tabs.some((tab) => !isOwnedPlaceholder(tab))) {
@@ -175,6 +180,13 @@ const rememberActivationBenchmarkFixtureWindow = async (windowId: number, initia
       [String(windowId)]: [...new Set([...(placeholderIdsByWindow[String(windowId)] ?? []), ...initialTabIds])],
     },
   });
+};
+
+const removeDisposableActivationBenchmarkPlaceholderTab = async (tabId: number): Promise<void> => {
+  const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+  if (tab && isDisposableActivationBenchmarkPlaceholderTab(tab)) {
+    await chrome.tabs.remove(tabId).catch(() => undefined);
+  }
 };
 
 const tabPreviewCache = new TabPreviewCache(
@@ -540,6 +552,12 @@ const openCommandCenter = async (
       if (liveSurface) {
         const pendingCycles = launch.pendingCycles;
         tabSwitcherOpeningWindows.delete(windowId);
+        if (rejectQueuedTabSwitcherLaunch) {
+          if (pendingCycles) {
+            await cycleTabSwitcher(tab.id, windowId, liveSurface, pendingCycles);
+          }
+          return false;
+        }
         await cycleTabSwitcher(tab.id, windowId, liveSurface, pendingCycles + 1);
         return true;
       }
@@ -1039,11 +1057,11 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
         const fixtureWindow = await chrome.windows
           .create({ focused: false, tabId: initialTabId })
           .catch(async (error: unknown) => {
-            await chrome.tabs.remove(initialTabId).catch(() => undefined);
+            await removeDisposableActivationBenchmarkPlaceholderTab(initialTabId);
             throw error;
           });
         if (!fixtureWindow || fixtureWindow.id === undefined) {
-          await chrome.tabs.remove(initialTabId).catch(() => undefined);
+          await removeDisposableActivationBenchmarkPlaceholderTab(initialTabId);
           throw new Error('Chrome did not create a fixture window.');
         }
         targets.push(fixtureWindow.id);
@@ -1051,10 +1069,7 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
         try {
           await rememberActivationBenchmarkFixtureWindow(fixtureWindow.id, [initialTabId]);
         } catch (error) {
-          const currentInitialTab = await chrome.tabs.get(initialTabId).catch(() => undefined);
-          if (currentInitialTab && isDisposableActivationBenchmarkPlaceholderTab(currentInitialTab)) {
-            await chrome.tabs.remove(initialTabId).catch(() => undefined);
-          }
+          await removeDisposableActivationBenchmarkPlaceholderTab(initialTabId);
           throw error;
         }
       }
@@ -1113,7 +1128,7 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
       ]);
       const totalCountsByWindow = [mainWindowId, ...targets].map((windowId) => [
         windowId,
-        finalTabs.filter((tab) => tab.windowId === windowId).length,
+        finalTabs.filter((tab) => tab.windowId === windowId && !isActivationBenchmarkDiagnosticsTab(tab)).length,
       ]);
       if (
         arrangedFixtureTabs.length !== 1000 ||
@@ -1766,6 +1781,7 @@ const listTabsOnce = async (): Promise<{ snapshot: PaletteTabsSnapshot; writeGen
       (tab) =>
         tab.id !== undefined &&
         tab.windowId !== chrome.windows.WINDOW_ID_NONE &&
+        !(activationBenchmarkMode && isActivationBenchmarkDiagnosticsTab(tab)) &&
         !tab.url?.startsWith(ownExtensionUrlPrefix),
     )
     .map((tab) => {
