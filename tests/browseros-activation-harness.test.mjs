@@ -135,7 +135,7 @@ test('BrowserOS harness rejects paths and origins outside the exact fixture URL'
   }
 });
 
-test('fixture layout setup allows 28 seconds for large BrowserOS tab layouts', async () => {
+test('fixture layout setup returns a resumable handle before the BrowserOS run cap', async () => {
   let observedTimeout;
   const browser = {
     pages: {
@@ -158,8 +158,35 @@ test('fixture layout setup allows 28 seconds for large BrowserOS tab layouts', a
     }),
   };
 
-  await assert.rejects(benchmarkWithoutUrlGlobal.setLayout(browser, { layout: 'single' }), /28000 ms/);
-  assert.equal(observedTimeout, 28000);
+  const result = await benchmarkWithoutUrlGlobal.setLayout(browser, { layout: 'single', resultTimeoutMs: 28000 });
+
+  assert.deepEqual(result, { ok: true, pending: true, layout: 'single', pageId: 42 });
+  assert.equal(observedTimeout, 20000);
+});
+
+test('fixture layout wait resumes and returns the completed layout result', async () => {
+  let observedTimeout;
+  const browser = {
+    page: (pageId) => {
+      assert.equal(pageId, 42);
+      return {
+        waitForSelector: async (_selector, options) => {
+          observedTimeout = options.timeout;
+          return { matched: true };
+        },
+        evaluateInPage: async () => ({ value: { success: true, layout: 'single', selected: 1000 } }),
+      };
+    },
+  };
+
+  const result = await benchmarkWithoutUrlGlobal.waitLayout(browser, {
+    pageId: 42,
+    layout: 'single',
+    resultTimeoutMs: 28000,
+  });
+
+  assert.deepEqual(result, { ok: true, pending: false, layout: 'single', success: true, selected: 1000 });
+  assert.equal(observedTimeout, 20000);
 });
 
 test('split collection accepts a result recorded after the first probe read but before the deadline check', async () => {

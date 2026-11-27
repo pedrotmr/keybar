@@ -11,6 +11,8 @@
  *   return await globalThis.KeybarColdActivationBenchmark.collect(browser, pending);
  * Reused-document warm batches require a one-sample `keepDocument` activation
  * first; close its surface with Escape before setting `reuseDocument: true`.
+ * Large layout setup can outlast one BrowserOS `run` call. If `setLayout`
+ * returns `pending: true`, pass that handle to `waitLayout` in a later call.
  *
  * The runner keeps the fixture active, stops Keybar from the background
  * serviceworker-internals page, and sends a test-only activation through the
@@ -80,12 +82,51 @@ const parseMonotonicTimestamp = (value) => {
 
 const hasMonotonicTriggerResponse = (probe) => Number.isFinite(probe?.triggerResponse?.completedPerfMs);
 
+const MAX_LAYOUT_WAIT_CHUNK_MS = 20000;
+const isSupportedFixtureLayout = (layout) => ['single', 'four', 'hundred', 'cleanup'].includes(layout);
+
+const waitForKeybarFixtureLayoutMcp = async (
+  browser,
+  { pageId, layout, resultTimeoutMs = MAX_LAYOUT_WAIT_CHUNK_MS },
+) => {
+  if (!isSupportedFixtureLayout(layout)) {
+    throw new Error(`Unsupported fixture layout: ${layout}`);
+  }
+  if (!Number.isInteger(pageId) || pageId < 1) {
+    throw new Error('Waiting for a fixture layout needs the page ID returned by setLayout');
+  }
+  if (!Number.isFinite(resultTimeoutMs) || resultTimeoutMs <= 0) {
+    throw new Error('Fixture layout wait timeout must be a positive finite number');
+  }
+
+  const fixture = browser.page(pageId);
+  const timeoutMs = Math.min(resultTimeoutMs, MAX_LAYOUT_WAIT_CHUNK_MS);
+  const resultWait = await fixture.waitForSelector('html[data-keybar-benchmark-layout-result]', {
+    timeout: timeoutMs,
+  });
+  if (!resultWait.matched) {
+    return { ok: true, pending: true, layout, pageId };
+  }
+
+  const result = await fixture.evaluateInPage(() => {
+    const serialized = document.documentElement.getAttribute('data-keybar-benchmark-layout-result');
+    return serialized ? JSON.parse(serialized) : null;
+  });
+  if (!result.value?.success || result.value.layout !== layout) {
+    throw new Error(`Fixture layout failed: ${JSON.stringify(result.value)}`);
+  }
+  return { ok: true, pending: false, layout, ...result.value };
+};
+
 const setKeybarFixtureLayoutMcp = async (
   browser,
-  { layout, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin, resultTimeoutMs = 28000 },
+  { layout, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin, resultTimeoutMs = MAX_LAYOUT_WAIT_CHUNK_MS },
 ) => {
-  if (!['single', 'four', 'hundred', 'cleanup'].includes(layout)) {
+  if (!isSupportedFixtureLayout(layout)) {
     throw new Error(`Unsupported fixture layout: ${layout}`);
+  }
+  if (!Number.isFinite(resultTimeoutMs) || resultTimeoutMs <= 0) {
+    throw new Error('Fixture layout wait timeout must be a positive finite number');
   }
   if (fixtureOrigin !== defaultBenchmarkOptions.fixtureOrigin) {
     throw new Error('Activation benchmark builds only match the fixed 127.0.0.1:8770 fixture origin');
@@ -118,21 +159,7 @@ const setKeybarFixtureLayoutMcp = async (
     },
     { requestedLayout: layout },
   );
-  const resultWait = await fixture.waitForSelector('html[data-keybar-benchmark-layout-result]', {
-    timeout: resultTimeoutMs,
-  });
-  if (!resultWait.matched) {
-    throw new Error(`The ${layout} fixture layout did not finish within ${resultTimeoutMs} ms`);
-  }
-
-  const result = await fixture.evaluateInPage(() => {
-    const serialized = document.documentElement.getAttribute('data-keybar-benchmark-layout-result');
-    return serialized ? JSON.parse(serialized) : null;
-  });
-  if (!result.value?.success || result.value.layout !== layout) {
-    throw new Error(`Fixture layout failed: ${JSON.stringify(result.value)}`);
-  }
-  return { ok: true, layout, ...result.value };
+  return waitForKeybarFixtureLayoutMcp(browser, { pageId: fixtureInfo.pageId, layout, resultTimeoutMs });
 };
 
 const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOptions) => {
@@ -1190,6 +1217,7 @@ const collectKeybarColdActivationMcp = async (
 
 globalThis.KeybarColdActivationBenchmark = Object.freeze({
   setLayout: setKeybarFixtureLayoutMcp,
+  waitLayout: waitForKeybarFixtureLayoutMcp,
   run: runKeybarColdActivationMcp,
   collect: collectKeybarColdActivationMcp,
 });
