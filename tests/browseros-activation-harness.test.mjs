@@ -133,6 +133,29 @@ test('split collection accepts a trigger response recorded after the first probe
   assert.equal(result.sample.latencyMs.firstResultAfterPaintOpportunity, 9);
 });
 
+test('split collection accepts a trigger response recorded while its selector wait times out', async () => {
+  const pending = pendingActivation({ triggerComplete: false });
+  const browser = makeBrowser(pending, async (selector, options, probe) => {
+    assert.equal(selector, 'html[data-keybar-benchmark-trigger-complete="true"]');
+    assert.equal(options.timeout, 4);
+    probe.triggerResponse.completedPerfMs = 99;
+    probe.bridgeState.resultAfterPaintOpportunityAt = '99';
+    probe.events.push({
+      activationId: pending.activationId,
+      name: 'firstResultAfterPaintOpportunity',
+      activation: 1,
+      surface: 'command-bar',
+      perfMs: 99,
+    });
+    return { matched: false };
+  });
+
+  const result = await benchmark.collect(browser, pending);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sample.latencyMs.firstResultAfterPaintOpportunity, 9);
+});
+
 test('split collection accepts an on-time result recorded as the selector wait times out', async () => {
   const pending = pendingActivation({ completedPerfMs: 94 });
   const browser = makeBrowser(pending, async (selector, options, probe) => {
@@ -155,7 +178,7 @@ test('split collection accepts an on-time result recorded as the selector wait t
   assert.equal(result.sample.latencyMs.firstResultAfterPaintOpportunity, 9);
 });
 
-test('split collection accepts an on-time trigger response recorded as the selector wait times out', async () => {
+test('split collection accepts an on-time trigger response when no deadline remains', async () => {
   const pending = pendingActivation({
     completedPerfMs: 99,
     resultMarkerAt: '99',
