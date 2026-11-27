@@ -5,7 +5,12 @@ import { test } from 'node:test';
 const harnessSource = await readFile(new URL('../scripts/browseros-cold-activation-mcp.js', import.meta.url), 'utf8');
 const benchmark = new Function('globalThis', `${harnessSource}\nreturn globalThis.KeybarColdActivationBenchmark;`)({});
 
-const pendingActivation = ({ completedPerfMs, resultMarkerAt, includeResultEvent = false } = {}) => {
+const pendingActivation = ({
+  completedPerfMs,
+  resultMarkerAt,
+  includeResultEvent = false,
+  triggerComplete = true,
+} = {}) => {
   const activationId = 'activation-1';
   const events = [
     { activationId, name: 'hostInjected', perfMs: 92 },
@@ -45,21 +50,21 @@ const pendingActivation = ({ completedPerfMs, resultMarkerAt, includeResultEvent
         completedPerfMs,
       },
       bridgeState: {
-        triggerComplete: true,
+        triggerComplete,
         resultAfterPaintOpportunityAt: resultMarkerAt ?? null,
       },
     },
   };
 };
 
-const makeBrowser = (pending, onWait) => {
+const makeBrowser = (pending, onWait, pageClockMs = 96) => {
   const fixture = {
     evaluateInPage: async (script) => {
       if (typeof script === 'string' && script.includes('__keybarColdActivationProbe')) {
         return { value: pending.fixtureProbe };
       }
       if (script === 'return performance.now()') {
-        return { value: 96 };
+        return { value: pageClockMs };
       }
       return { value: true };
     },
@@ -69,7 +74,7 @@ const makeBrowser = (pending, onWait) => {
   return { page: () => fixture };
 };
 
-test('split collection waits for a missing result marker within the original activation deadline', async () => {
+test('split collection accepts an on-time result recorded as the selector wait times out', async () => {
   const pending = pendingActivation({ completedPerfMs: 94 });
   const browser = makeBrowser(pending, async (selector, options, probe) => {
     assert.equal(selector, 'html[data-keybar-benchmark-result-after-paint-opportunity-at]');
@@ -82,8 +87,29 @@ test('split collection waits for a missing result marker within the original act
       surface: 'command-bar',
       perfMs: 99,
     });
-    return { matched: true };
+    return { matched: false };
   });
+
+  const result = await benchmark.collect(browser, pending);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sample.latencyMs.firstResultAfterPaintOpportunity, 9);
+});
+
+test('split collection accepts an on-time trigger response recorded as the selector wait times out', async () => {
+  const pending = pendingActivation({
+    completedPerfMs: 99,
+    resultMarkerAt: '99',
+    includeResultEvent: true,
+    triggerComplete: false,
+  });
+  const browser = makeBrowser(
+    pending,
+    async () => {
+      throw new Error('The zero remaining deadline should not start a selector wait');
+    },
+    101,
+  );
 
   const result = await benchmark.collect(browser, pending);
 

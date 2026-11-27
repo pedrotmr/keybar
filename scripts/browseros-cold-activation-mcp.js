@@ -73,6 +73,8 @@ const parseMonotonicTimestamp = (value) => {
   return Number.isFinite(timestamp) ? timestamp : null;
 };
 
+const hasMonotonicTriggerResponse = (probe) => Number.isFinite(probe?.triggerResponse?.completedPerfMs);
+
 const setKeybarFixtureLayoutMcp = async (
   browser,
   { layout, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin, resultTimeoutMs = 25000 },
@@ -711,9 +713,13 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
           : { matched: false };
         if (!triggerComplete.matched) {
           const partial = await readActivationBenchmarkProbe(fixture);
-          throw new Error(`Benchmark activation response timed out: ${JSON.stringify(partial)}`);
+          if (!hasMonotonicTriggerResponse(partial)) {
+            throw new Error(`Benchmark activation response timed out: ${JSON.stringify(partial)}`);
+          }
+          probe = partial;
+        } else {
+          probe = await readActivationBenchmarkProbe(fixture);
         }
-        probe = await readActivationBenchmarkProbe(fixture);
       }
       if (!probe) {
         throw new Error('Fixture probe disappeared before results could be read');
@@ -741,11 +747,15 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
           : { matched: false };
         if (!resultWait.matched) {
           const partial = await readActivationBenchmarkProbe(fixture);
-          throw new Error(
-            `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial)}`,
-          );
+          if (parseMonotonicTimestamp(partial?.bridgeState?.resultAfterPaintOpportunityAt) === null) {
+            throw new Error(
+              `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial)}`,
+            );
+          }
+          probe = partial;
+        } else {
+          probe = await readActivationBenchmarkProbe(fixture);
         }
-        probe = await readActivationBenchmarkProbe(fixture);
       }
       const resultMarkerAt = parseMonotonicTimestamp(probe?.bridgeState?.resultAfterPaintOpportunityAt);
       if (resultMarkerAt === null) {
@@ -984,16 +994,20 @@ const collectKeybarColdActivationMcp = async (
         : { matched: false };
       if (!triggerComplete.matched) {
         const partial = await readActivationBenchmarkProbe(fixture);
-        const error = new Error(`Benchmark activation response timed out: ${JSON.stringify(partial)}`);
-        return {
-          ok: false,
-          pending: false,
-          failedIndex: index,
-          surface,
-          error: error.message,
-        };
+        if (!hasMonotonicTriggerResponse(partial)) {
+          const error = new Error(`Benchmark activation response timed out: ${JSON.stringify(partial)}`);
+          return {
+            ok: false,
+            pending: false,
+            failedIndex: index,
+            surface,
+            error: error.message,
+          };
+        }
+        probe = partial;
+      } else {
+        probe = await readActivationBenchmarkProbe(fixture);
       }
-      probe = await readActivationBenchmarkProbe(fixture);
     }
     if (!probe) {
       throw new Error('Fixture probe disappeared before results could be read');
@@ -1021,19 +1035,23 @@ const collectKeybarColdActivationMcp = async (
         : { matched: false };
       if (!resultWait.matched) {
         const partial = await readActivationBenchmarkProbe(fixture);
-        const error = new Error(
-          `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial)}`,
-        );
-        return {
-          ok: false,
-          pending: false,
-          failedIndex: index,
-          surface,
-          cell,
-          error: error.message,
-        };
+        if (parseMonotonicTimestamp(partial?.bridgeState?.resultAfterPaintOpportunityAt) === null) {
+          const error = new Error(
+            `No selected ${surface} result became visible within ${resultTimeoutMs} ms: ${JSON.stringify(partial)}`,
+          );
+          return {
+            ok: false,
+            pending: false,
+            failedIndex: index,
+            surface,
+            cell,
+            error: error.message,
+          };
+        }
+        probe = partial;
+      } else {
+        probe = await readActivationBenchmarkProbe(fixture);
       }
-      probe = await readActivationBenchmarkProbe(fixture);
     }
     if (!probe) {
       throw new Error('Fixture probe disappeared before results could be read');
