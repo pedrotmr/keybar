@@ -448,6 +448,11 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
   };
 
   const assertFixtureStillActive = async () => {
+    const currentWindows = await browser.windows({});
+    const focusedWindow = currentWindows.windows.find((window) => window.isActive);
+    if (focusedWindow?.windowId !== activeWindow.windowId) {
+      throw new Error('The fixture browser window lost focus during cold-worker setup');
+    }
     pages = await browser.pages.list();
     fixtureInfo = pages.find((page) => page.pageId === fixture.id);
     if (!fixtureInfo?.isActive || fixtureInfo.windowId !== activeWindow.windowId) {
@@ -624,10 +629,14 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         throw new Error(`Keybar worker state changed before activation: ${JSON.stringify(workerBeforeTrigger)}`);
       }
 
+      await assertFixtureStillActive();
       const activationId = `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`;
       const activationWaitStartedAt = Date.now();
       const trigger = await fixture.evaluateInPage(
         ({ requestedMode, requestedActivationId }) => {
+          if (document.visibilityState !== 'visible' || !document.hasFocus()) {
+            return { focused: false, activationId: requestedActivationId };
+          }
           const startedAt = Date.now();
           const startedPerfMs = performance.now();
           window.dispatchEvent(
@@ -635,10 +644,13 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
               detail: { mode: requestedMode, startedAt, activationId: requestedActivationId },
             }),
           );
-          return { startedAt, startedPerfMs, activationId: requestedActivationId };
+          return { focused: true, startedAt, startedPerfMs, activationId: requestedActivationId };
         },
         { requestedMode: mode, requestedActivationId: activationId },
       );
+      if (trigger.value?.focused !== true) {
+        throw new Error('The fixture document lost focus immediately before activation');
+      }
 
       if (!waitForResult) {
         return {

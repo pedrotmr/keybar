@@ -1111,7 +1111,7 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
         windowId,
         arrangedFixtureTabs.filter((tab) => tab.windowId === windowId).length,
       ]);
-      const totalCountsByTarget = targets.map((windowId) => [
+      const totalCountsByWindow = [mainWindowId, ...targets].map((windowId) => [
         windowId,
         finalTabs.filter((tab) => tab.windowId === windowId).length,
       ]);
@@ -1120,10 +1120,10 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
         tabsByWindow.size !== 4 ||
         [...tabsByWindow.values()].some((count) => count !== 250) ||
         fixtureCountsByTarget.some(([, count]) => count !== 250) ||
-        totalCountsByTarget.some(([, count]) => count !== 250)
+        totalCountsByWindow.some(([, count]) => count !== 250)
       ) {
         throw new Error(
-          `Expected four windows with 250 tabs and fixture tabs each; got ${JSON.stringify({ fixtureCounts: fixtureCountsByTarget, totalCounts: totalCountsByTarget })}.`,
+          `Expected four windows with 250 tabs and fixture tabs each; got ${JSON.stringify({ fixtureCounts: fixtureCountsByTarget, totalCounts: totalCountsByWindow })}.`,
         );
       }
 
