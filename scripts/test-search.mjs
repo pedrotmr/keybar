@@ -2091,15 +2091,38 @@ test('background message and command contracts', async () => {
     const runtimeMessages = makeEvent();
     const installedEvents = { onInstalled: makeEvent(), onStartup: makeEvent() };
     const actionCalls = [];
+    const waitForFallbackPopupRoute = async (tabId, popup) => {
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        const fallbackIndex = actionCalls.findIndex((call) => call.type === 'createWindow');
+        if (
+          fallbackIndex >= 0 &&
+          actionCalls
+            .slice(fallbackIndex + 1)
+            .some((call) => call.type === 'setPopup' && call.tabId === tabId && call.popup === popup)
+        ) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      assert.fail(`Toolbar popup route ${JSON.stringify(popup)} was not restored after fallback window creation`);
+    };
     let activeTabQuery;
     const privilegedMutations = [];
     let permissionWindowOptions;
+    let overlayOpenResponse = { success: true };
+    let failPopupOpen = false;
     let activeBackgroundTab = { id: 42, title: 'Shortcut settings', url: 'chrome://extensions/shortcuts', windowId: 1 };
+    const startupTabs = [
+      activeBackgroundTab,
+      { id: 9, title: 'Example tab', url: 'https://example.test/', windowId: 1 },
+    ];
     globalThis.chrome = {
       action: {
         onClicked: makeEvent(),
         openPopup: async () => {
           actionCalls.push({ type: 'openPopup' });
+          if (failPopupOpen) throw new Error('Native popup unavailable');
         },
         setPopup: async (details) => {
           actionCalls.push({ type: 'setPopup', ...details });
@@ -2133,12 +2156,17 @@ test('background message and command contracts', async () => {
           id === activeBackgroundTab.id
             ? activeBackgroundTab
             : { id, url: 'https://example.test/old', title: 'Old title', windowId: 1, index: 0 },
+        sendMessage: async (_tabId, message) => {
+          if (message.action === 'overlay:open') return overlayOpenResponse;
+          if (message.action === 'overlay:surface-status') return { open: false };
+          return undefined;
+        },
         query: async (queryInfo) => {
           if (queryInfo?.active) {
             activeTabQuery = queryInfo;
             return [activeBackgroundTab];
           }
-          return [];
+          return startupTabs;
         },
       },
       permissions: { ...permissionEvents, getAll: async () => ({ permissions: [] }) },
@@ -2150,12 +2178,42 @@ test('background message and command contracts', async () => {
         },
         create: async (options) => {
           permissionWindowOptions = options;
+          actionCalls.push({ type: 'createWindow', options });
           return { id: 99 };
         },
+        getAll: async () => [{ id: 1 }],
       },
     };
     await server.ssrLoadModule(`/${artifacts.background.entry}`);
     await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(
+      actionCalls.filter((call) => call.type === 'setPopup'),
+      [],
+      'a cold worker activation does not configure the toolbar action across every open tab',
+    );
+
+    for (const [event, name] of [
+      [installedEvents.onInstalled, 'installation'],
+      [installedEvents.onStartup, 'browser startup'],
+    ]) {
+      actionCalls.length = 0;
+      event.listeners[0]();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const configuredPopups = actionCalls
+        .filter((call) => call.type === 'setPopup')
+        .map(({ tabId, popup }) => ({ tabId, popup }))
+        .sort((left, right) => left.tabId - right.tabId);
+      assert.deepEqual(
+        configuredPopups,
+        [
+          { tabId: activeBackgroundTab.id, popup: artifacts.popupHtml },
+          { tabId: 9, popup: '' },
+        ].sort((left, right) => left.tabId - right.tabId),
+        `${name} configures the popup for each restricted and ordinary tab`,
+      );
+    }
+
+    actionCalls.length = 0;
     browserEvents.onActivated.listeners[0]({ tabId: activeBackgroundTab.id });
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.ok(
@@ -2184,6 +2242,41 @@ test('background message and command contracts', async () => {
       'the Command Bar shortcut opens its popup on Chrome-native pages',
     );
     assert.equal(sessionStore.nextPaletteMode, 'commands', 'the native-page popup receives Command Bar mode');
+
+    actionCalls.length = 0;
+    globalThis.chrome.action.onClicked.listeners[0](activeBackgroundTab);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(
+      actionCalls.some(
+        (call) =>
+          call.type === 'setPopup' && call.tabId === activeBackgroundTab.id && call.popup === artifacts.popupHtml,
+      ),
+      'a warm toolbar click on a Chrome-native page restores its popup route',
+    );
+    assert.ok(actionCalls.some((call) => call.type === 'openPopup'));
+    assert.equal(sessionStore.nextPaletteMode, 'commands');
+    assert.equal(
+      actionCalls.filter((call) => call.type === 'setPopup' && call.tabId === activeBackgroundTab.id).at(-1)?.popup,
+      artifacts.popupHtml,
+      'the restricted-page popup route remains configured after opening the fallback',
+    );
+
+    activeBackgroundTab.url = 'https://example.test/current';
+    overlayOpenResponse = { success: false };
+    failPopupOpen = true;
+    actionCalls.length = 0;
+    globalThis.chrome.action.onClicked.listeners[0](activeBackgroundTab);
+    await waitForFallbackPopupRoute(activeBackgroundTab.id, '');
+    assert.ok(actionCalls.some((call) => call.type === 'openPopup'));
+    assert.ok(actionCalls.some((call) => call.type === 'createWindow'));
+    assert.equal(
+      actionCalls.filter((call) => call.type === 'setPopup' && call.tabId === activeBackgroundTab.id).at(-1)?.popup,
+      '',
+      'an eligible page restores toolbar-click routing after the popup fallback fails',
+    );
+    activeBackgroundTab.url = 'chrome://extensions/shortcuts';
+    overlayOpenResponse = { success: true };
+    failPopupOpen = false;
 
     const updatedListener = browserEvents.onUpdated.listeners.at(-1);
     updatedListener(

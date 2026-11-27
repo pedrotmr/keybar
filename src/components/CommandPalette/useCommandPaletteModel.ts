@@ -23,6 +23,7 @@ import { TAB_GROUP_ID_NONE } from '@/utils/chromeApiConstants';
 import { initialCommandItems, toTabItems } from '@/utils/tabItems';
 import type { ManagedTab } from '@/utils/tabItems';
 import { markCommandPaletteEscape } from '@/utils/escapeEvents';
+import { isActivationBenchmarkBuild, reportActivationBenchmarkStage } from '@/utils/coldActivationBenchmark';
 import type { ActionDockItem } from '../ActionDock/types';
 import {
   actionDockId,
@@ -147,7 +148,12 @@ export const useCommandPaletteModel = ({
   const { bookmarks, history, localDataLoading, localDataLoaded, loadLocalData } = useSavedPages(permissions, notify);
 
   useLayoutEffect(() => {
-    inputRef.current?.focus({ preventScroll: true });
+    const input = inputRef.current;
+    input?.focus({ preventScroll: true });
+
+    if (isActivationBenchmarkBuild && surface === 'overlay' && input?.matches(':focus')) {
+      return reportActivationBenchmarkStage('surfaceFocused', 'command-bar', input);
+    }
   }, []);
 
   useEffect(() => {

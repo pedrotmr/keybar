@@ -8,6 +8,7 @@ import {
   type PointerEvent,
 } from 'react';
 import { sendBackground } from '@/utils/chromeHelpers';
+import { isActivationBenchmarkBuild, reportActivationBenchmarkStage } from '@/utils/coldActivationBenchmark';
 import type { ManagedTab } from '@/utils/tabItems';
 import { wasTabSwitcherModifierReleasedAfter } from '@/utils/tabSwitcherKeyRelease';
 import { optionId } from './helpers';
@@ -182,8 +183,13 @@ export const useTabSwitcherModel = ({
   };
 
   useLayoutEffect(() => {
-    (listboxRef.current ?? stateRef.current)?.focus({ preventScroll: true });
-  }, [hasTabs]);
+    const focusTarget = listboxRef.current ?? stateRef.current;
+    focusTarget?.focus({ preventScroll: true });
+
+    if (isActivationBenchmarkBuild && surface === 'overlay' && listboxRef.current?.matches(':focus')) {
+      return reportActivationBenchmarkStage('surfaceFocused', 'tab-switcher', listboxRef.current);
+    }
+  }, [hasTabs, surface]);
 
   useLayoutEffect(() => {
     selectedTabRef.current = selectedTab;

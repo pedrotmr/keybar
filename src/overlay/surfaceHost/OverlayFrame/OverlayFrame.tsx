@@ -1,3 +1,6 @@
+import { useLayoutEffect, useRef } from 'react';
+import { reportActivationBenchmarkStage } from '@/utils/coldActivationBenchmark';
+import type { ActivationBenchmarkSurface } from '@/utils/coldActivationBenchmark';
 import type { SurfaceController, SurfaceRenderer } from '../types';
 import { useOverlayFrame } from './useOverlayFrame';
 
@@ -7,6 +10,7 @@ interface OverlayFrameProps {
 }
 
 export function OverlayFrame({ controller, renderSurface }: OverlayFrameProps) {
+  const stageRef = useRef<HTMLDivElement>(null);
   const {
     isOpen,
     theme,
@@ -19,12 +23,21 @@ export function OverlayFrame({ controller, renderSurface }: OverlayFrameProps) {
     tabsSnapshot,
   } = useOverlayFrame(controller);
 
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const surface: ActivationBenchmarkSurface = controller.surface === 'tabs' ? 'tab-switcher' : 'command-bar';
+    return reportActivationBenchmarkStage('surfaceRendered', surface, stageRef.current);
+  }, [controller.surface, isOpen]);
+
   if (!isOpen) {
     return null;
   }
 
   return (
-    <div className="cc-overlay-stage">
+    <div ref={stageRef} className="cc-overlay-stage">
       <div className="cc-overlay-backdrop" aria-hidden="true" onClick={closeSurface} />
       {renderSurface({
         theme,

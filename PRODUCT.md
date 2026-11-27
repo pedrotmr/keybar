@@ -6,7 +6,7 @@ Keyboard-first Chrome users who keep many tabs open while researching, writing, 
 
 ## Purpose
 
-Keybar brings local search, browser commands, external search handoffs, and tab management into one fast interaction model. The Command Bar is the primary surface. The Tab Switcher is a separate, compact recent-tabs view opened with its keyboard shortcut on supported web pages.
+Keybar brings local search, browser commands, external search handoffs, and tab management into one fast interaction model. The Command Bar is the primary surface; the toolbar action opens it on regular pages and uses Keybar's browser popup on pages where browser restrictions prevent page overlays. The Tab Switcher is a separate, compact recent-tabs view opened with its keyboard shortcut on supported web pages.
 
 Success means local actions feel immediate, tab names survive ordinary navigation, keyboard and screen-reader users can complete the same workflows, and the extension leaves the host page visually untouched.
 

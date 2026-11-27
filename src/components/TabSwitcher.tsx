@@ -1,4 +1,5 @@
-import type { CSSProperties } from 'react';
+import { useLayoutEffect, type CSSProperties } from 'react';
+import { isActivationBenchmarkBuild, reportActivationBenchmarkStage } from '@/utils/coldActivationBenchmark';
 import { EmptyPanel } from './TabSwitcher/EmptyPanel';
 import { TabCard } from './TabSwitcher/TabCard/TabCard';
 import { useTabSwitcherModel } from './TabSwitcher/useTabSwitcherModel';
@@ -6,6 +7,15 @@ import type { TabSwitcherProps } from './TabSwitcher/types';
 
 export function TabSwitcher(props: TabSwitcherProps) {
   const model = useTabSwitcherModel(props);
+
+  useLayoutEffect(() => {
+    if (!isActivationBenchmarkBuild || !model.hasTabs) {
+      return;
+    }
+
+    const selected = model.listboxRef.current?.querySelector<HTMLElement>('[aria-selected="true"]') ?? null;
+    return reportActivationBenchmarkStage('firstResultAfterPaintOpportunity', 'tab-switcher', selected);
+  }, [model.hasTabs, model.listboxRef, model.selectedIndex]);
 
   return (
     <div
