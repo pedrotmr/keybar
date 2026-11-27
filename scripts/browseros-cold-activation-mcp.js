@@ -733,6 +733,7 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         !focused ||
         !firstResultAfterPaintOpportunity ||
         firstResultAfterPaintOpportunity.surface !== surface ||
+        firstResultAfterPaintOpportunity.activation !== activation ||
         !Number.isFinite(firstResultAfterPaintOpportunityAt)
       ) {
         throw new Error(
