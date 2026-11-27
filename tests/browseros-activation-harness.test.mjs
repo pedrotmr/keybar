@@ -4,6 +4,11 @@ import { test } from 'node:test';
 
 const harnessSource = await readFile(new URL('../scripts/browseros-cold-activation-mcp.js', import.meta.url), 'utf8');
 const benchmark = new Function('globalThis', `${harnessSource}\nreturn globalThis.KeybarColdActivationBenchmark;`)({});
+const benchmarkWithoutUrlGlobal = new Function(
+  'globalThis',
+  'URL',
+  `${harnessSource}\nreturn globalThis.KeybarColdActivationBenchmark;`,
+)({}, undefined);
 
 const pendingActivation = ({
   completedPerfMs,
@@ -74,6 +79,65 @@ const makeBrowser = (pending, onWait, pageClockMs = 96, { onClock } = {}) => {
   };
   return { page: () => fixture };
 };
+
+test('BrowserOS harness recognizes fixture URLs without a URL global', async () => {
+  const pending = pendingActivation({ completedPerfMs: 94, resultMarkerAt: '98', includeResultEvent: true });
+  const result = await benchmarkWithoutUrlGlobal.collect(
+    makeBrowser(pending, async () => {
+      throw new Error('An on-time result should not require another wait');
+    }),
+    pending,
+  );
+
+  assert.equal(result.ok, true);
+
+  const fixtureHandleRequested = new Error('fixture page handle requested');
+  const browser = {
+    pages: {
+      list: async () => [
+        {
+          pageId: 42,
+          windowId: 7,
+          isActive: true,
+          url: 'http://127.0.0.1:8770/fixture?tab=0001',
+        },
+      ],
+    },
+    windows: async () => ({ windows: [{ windowId: 7, isActive: true }] }),
+    page: () => {
+      throw fixtureHandleRequested;
+    },
+  };
+
+  await assert.rejects(benchmarkWithoutUrlGlobal.run(browser, { count: 1 }), fixtureHandleRequested);
+});
+
+test('fixture layout setup allows 28 seconds for large BrowserOS tab layouts', async () => {
+  let observedTimeout;
+  const browser = {
+    pages: {
+      list: async () => [
+        {
+          pageId: 42,
+          windowId: 7,
+          isActive: true,
+          url: 'http://127.0.0.1:8770/fixture?tab=0001',
+        },
+      ],
+    },
+    windows: async () => ({ windows: [{ windowId: 7, isActive: true }] }),
+    page: () => ({
+      evaluateInPage: async () => ({ value: true }),
+      waitForSelector: async (_selector, options) => {
+        observedTimeout = options.timeout;
+        return { matched: false };
+      },
+    }),
+  };
+
+  await assert.rejects(benchmarkWithoutUrlGlobal.setLayout(browser, { layout: 'single' }), /28000 ms/);
+  assert.equal(observedTimeout, 28000);
+});
 
 test('split collection accepts a result recorded after the first probe read but before the deadline check', async () => {
   const pending = pendingActivation({ completedPerfMs: 94 });

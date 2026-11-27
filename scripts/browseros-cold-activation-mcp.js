@@ -28,12 +28,17 @@ const defaultBenchmarkOptions = {
 };
 
 const isActivationBenchmarkFixtureUrl = (value, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin) => {
-  try {
-    const parsed = new URL(value);
-    return parsed.origin === fixtureOrigin && parsed.pathname === '/fixture';
-  } catch {
+  if (typeof value !== 'string') {
     return false;
   }
+
+  const fixtureUrlPrefix = `${fixtureOrigin}/fixture`;
+  if (!value.startsWith(fixtureUrlPrefix)) {
+    return false;
+  }
+
+  const nextCharacter = value[fixtureUrlPrefix.length];
+  return nextCharacter === undefined || nextCharacter === '?' || nextCharacter === '#';
 };
 
 const cleanupActivationBenchmark = async ({ fixture, restoreUrl, keepDocument, beforeRestore, releaseLock }) => {
@@ -77,7 +82,7 @@ const hasMonotonicTriggerResponse = (probe) => Number.isFinite(probe?.triggerRes
 
 const setKeybarFixtureLayoutMcp = async (
   browser,
-  { layout, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin, resultTimeoutMs = 25000 },
+  { layout, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin, resultTimeoutMs = 28000 },
 ) => {
   if (!['single', 'four', 'hundred', 'cleanup'].includes(layout)) {
     throw new Error(`Unsupported fixture layout: ${layout}`);
@@ -944,13 +949,7 @@ const collectKeybarColdActivationMcp = async (
   if (typeof restoreUrl !== 'string' || !restoreUrl || typeof keepDocument !== 'boolean') {
     throw new Error('Collector needs the restore URL and document-retention flag returned by the activation runner');
   }
-  let parsedRestoreUrl;
-  try {
-    parsedRestoreUrl = new URL(restoreUrl);
-  } catch {
-    throw new Error(`Collector received an invalid fixture restore URL: ${restoreUrl}`);
-  }
-  if (parsedRestoreUrl.origin !== defaultBenchmarkOptions.fixtureOrigin || parsedRestoreUrl.pathname !== '/fixture') {
+  if (!isActivationBenchmarkFixtureUrl(restoreUrl)) {
     throw new Error(`Collector restore URL must be a Keybar fixture URL: ${restoreUrl}`);
   }
   if (typeof lockToken !== 'string' || !lockToken) {
