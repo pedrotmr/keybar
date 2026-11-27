@@ -112,6 +112,29 @@ test('BrowserOS harness recognizes fixture URLs without a URL global', async () 
   await assert.rejects(benchmarkWithoutUrlGlobal.run(browser, { count: 1 }), fixtureHandleRequested);
 });
 
+test('BrowserOS harness rejects paths and origins outside the exact fixture URL', async () => {
+  for (const url of [
+    'http://127.0.0.1:8770/fixture/',
+    'http://127.0.0.1:8770/fixtureX',
+    'http://127.0.0.1:8770.evil.test/fixture',
+    'http://127.0.0.1:8771/fixture',
+    'http://user@127.0.0.1:8770/fixture',
+    null,
+  ]) {
+    const browser = {
+      pages: {
+        list: async () => [{ pageId: 42, windowId: 7, isActive: true, url }],
+      },
+      windows: async () => ({ windows: [{ windowId: 7, isActive: true }] }),
+    };
+
+    await assert.rejects(
+      benchmarkWithoutUrlGlobal.run(browser, { count: 1 }),
+      /not a Keybar (?:activation )?fixture page/,
+    );
+  }
+});
+
 test('fixture layout setup allows 28 seconds for large BrowserOS tab layouts', async () => {
   let observedTimeout;
   const browser = {
