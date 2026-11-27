@@ -65,6 +65,14 @@ const remainingActivationTimeMs = async (fixture, deadlinePerfMs) => {
   return Math.max(0, deadlinePerfMs - pageClock.value);
 };
 
+const parseMonotonicTimestamp = (value) => {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null;
+  }
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+};
+
 const setKeybarFixtureLayoutMcp = async (
   browser,
   { layout, fixtureOrigin = defaultBenchmarkOptions.fixtureOrigin, resultTimeoutMs = 25000 },
@@ -264,6 +272,7 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
           triggerResponse = {
             activationId: event.detail?.activationId ?? null,
             response: event.detail?.response ?? null,
+            completedPerfMs: performance.now(),
           };
           root.setAttribute('data-keybar-benchmark-trigger-complete', 'true');
         });
@@ -717,7 +726,13 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
           `Benchmark response did not match activation ${activationId}: ${JSON.stringify(probe.triggerResponse)}`,
         );
       }
-      if (!Number.isFinite(Number(probe.bridgeState?.resultAfterPaintOpportunityAt))) {
+      if (!Number.isFinite(probe.triggerResponse.completedPerfMs)) {
+        throw new Error(`Benchmark response did not include a monotonic completion timestamp: ${activationId}`);
+      }
+      if (probe.triggerResponse.completedPerfMs > activationDeadlinePerfMs) {
+        throw new Error(`The ${surface} activation response arrived after the ${resultTimeoutMs} ms deadline`);
+      }
+      if (parseMonotonicTimestamp(probe.bridgeState?.resultAfterPaintOpportunityAt) === null) {
         const remainingMs = await remainingActivationTimeMs(fixture, activationDeadlinePerfMs);
         const resultWait = remainingMs
           ? await fixture.waitForSelector('html[data-keybar-benchmark-result-after-paint-opportunity-at]', {
@@ -732,8 +747,8 @@ const runKeybarColdActivationMcp = async (browser, options = defaultBenchmarkOpt
         }
         probe = await readActivationBenchmarkProbe(fixture);
       }
-      const resultMarkerAt = Number(probe?.bridgeState?.resultAfterPaintOpportunityAt);
-      if (!Number.isFinite(resultMarkerAt)) {
+      const resultMarkerAt = parseMonotonicTimestamp(probe?.bridgeState?.resultAfterPaintOpportunityAt);
+      if (resultMarkerAt === null) {
         throw new Error(`The ${surface} activation completed without a visible selected result`);
       }
       if (resultMarkerAt > activationDeadlinePerfMs) {
@@ -991,7 +1006,13 @@ const collectKeybarColdActivationMcp = async (
         `Benchmark response did not match activation ${activationId}: ${JSON.stringify(probe.triggerResponse)}`,
       );
     }
-    if (!Number.isFinite(Number(probe.bridgeState?.resultAfterPaintOpportunityAt))) {
+    if (!Number.isFinite(probe.triggerResponse.completedPerfMs)) {
+      throw new Error(`Benchmark response did not include a monotonic completion timestamp: ${activationId}`);
+    }
+    if (probe.triggerResponse.completedPerfMs > activationDeadlinePerfMs) {
+      throw new Error(`The ${surface} activation response arrived after the ${resultTimeoutMs} ms deadline`);
+    }
+    if (parseMonotonicTimestamp(probe.bridgeState?.resultAfterPaintOpportunityAt) === null) {
       const remainingMs = await remainingActivationTimeMs(fixture, activationDeadlinePerfMs);
       const resultWait = remainingMs
         ? await fixture.waitForSelector('html[data-keybar-benchmark-result-after-paint-opportunity-at]', {
@@ -1017,8 +1038,8 @@ const collectKeybarColdActivationMcp = async (
     if (!probe) {
       throw new Error('Fixture probe disappeared before results could be read');
     }
-    const resultMarkerAt = Number(probe.bridgeState?.resultAfterPaintOpportunityAt);
-    if (!Number.isFinite(resultMarkerAt)) {
+    const resultMarkerAt = parseMonotonicTimestamp(probe.bridgeState?.resultAfterPaintOpportunityAt);
+    if (resultMarkerAt === null) {
       throw new Error(`The ${surface} activation completed without a visible selected result`);
     }
     if (resultMarkerAt > activationDeadlinePerfMs) {
